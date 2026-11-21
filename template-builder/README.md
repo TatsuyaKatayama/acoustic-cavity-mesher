@@ -7,7 +7,7 @@
 | 場所 | 使用するもの |
 |---|---|
 | Windows 11 | 既存のCodexとPowerShell。CodexはこのディレクトリでPythonの単一機能コマンドを実行する。 |
-| このディレクトリの `.venv` | 既存のWindows x64版 Python 3.11を使い、CadQueryとその依存のOCPを入れる。OCP経由でOCCTの形状・XDE APIを使う。 |
+| このディレクトリの `.venv` | `uv venv` で既存のWindows x64版 Python 3.11を指定し、`uv pip` でCadQueryとその依存のOCPを入れる。OCP経由でOCCTの形状・XDE APIを使う。 |
 | Windowsの確認画面 | OCCT AIS。B2の画面を試作するときに、同じ環境へQtのPythonバインディングを入れる。まずPySide6とAISのウィンドウ表示・面選択が動くか確認する。 |
 | WSL | Bの初期開発はWindows側で進める。Linuxでのバッチ実行が必要になった場合に、WSL内に別のPython環境を作る。 |
 
@@ -15,13 +15,12 @@
 
 ## Windowsでの手動セットアップ
 
-PowerShellで、カレントディレクトリが親の `like3d` の場合に以下を実行する。
+導入済みの `uv` を使用する。PowerShellで、カレントディレクトリが親の `like3d` の場合に以下を実行する。
 
 ```powershell
 Set-Location .\template-builder
-& 'C:\Program Files\Python311\python.exe' -m venv .venv
-& .\.venv\Scripts\python.exe -m pip install --upgrade pip
-& .\.venv\Scripts\python.exe -m pip install cadquery
+uv venv --python 'C:\Program Files\Python311\python.exe' .venv
+uv pip install --python .\.venv\Scripts\python.exe cadquery
 & .\.venv\Scripts\python.exe -c "import cadquery as cq; from OCP.STEPCAFControl import STEPCAFControl_Reader; from OCP.AIS import AIS_Shape; print(cq.Workplane('XY').box(1, 1, 1).val().Volume())"
 ```
 
