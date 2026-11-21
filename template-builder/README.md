@@ -76,6 +76,31 @@ uv pip install --python .\.venv\Scripts\python.exe PySide6-Essentials
 
 面参照には部品配置IDとBREPの面インデックスを使う。レビュー結果は、元のB1マニフェストと提案ファイルにひもづく。曲面候補、複数面を一つの接合とする扱い、寸法変更をまたぐ面追跡は後続で扱う。
 
+## B3の履歴付きテンプレートを生成する
+
+初期テンプレートの対象は平面で取り付けるブロック1種類。XY面を取付基準にし、本体を+Z方向に作り、上面から必要な貫通穴を空ける。元の詳細部品はB2の面参照を検証するために使用し、簡略ソリッドは入力寸法から新規生成する。現在の簡略化レベルは `default`。
+
+`dimensions.json` の例。値はすべてmm、穴の位置は本体の中心を基準とする。
+
+```json
+{
+  "length": 30,
+  "width": 20,
+  "height": 10,
+  "hole_diameter": 3,
+  "hole_x": 2,
+  "hole_y": -1
+}
+```
+
+```powershell
+& .\.venv\Scripts\python.exe .\build_template.py .\b1-output .\b1-output\b3-input.json '1/1' .\b1-output\dimensions.json .\b1-output\template --map-face '1=mounting_plane'
+```
+
+`'1/1'` は対象部品の配置ID、`'1=mounting_plane'` は採用した候補ID 1の詳細面をテンプレートの取付面に対応づける例。対象部品の採用済み接合条件ごとに `--map-face` を指定する。この対応はB3の作業担当が明示し、出力時に面参照と、生成した形状で名前付き面を一意に特定できることを確認する。
+
+新しい出力ディレクトリに、再生成用のCadQueryコード、各操作後のBREP、最終形状、寸法・基準・名前付き面・接合条件を含む `template.json` を保存する。面インデックスは生成したBREPに対応し、再生成時は `mounting_plane` の名前から解決する。貫通穴は必要形状として定義し、径が5 mm以下でも作成する。詳細CADから寸法を読み取る試しフィットはB4で行う。
+
 ## 最初の実装範囲
 
 1. **B1 抽出**。STEPアセンブリ1件から部品と配置を取得し、部品名・配置ID・単位を一覧に出す。対象部品と周辺部品を後続処理へ渡せるようにする。
