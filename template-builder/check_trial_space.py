@@ -100,7 +100,7 @@ def small_features(shape, config):
 def check(config_path, space_path):
     config, digest = read_record(config_path)
     envelope = cylinder(config)
-    record, _ = read_record(space_path / "space.json")
+    record, space_record_digest = read_record(space_path / "space.json")
     data = (space_path / "space.brep").read_bytes()
     if (
         record["schema_version"] != 1 or record["length_unit"] != "mm"
@@ -120,6 +120,7 @@ def check(config_path, space_path):
         issues.extend(small_features(shape, config))
     return {
         "schema_version": 1, "status": "ng" if issues else "ok",
+        "space_record_sha256": space_record_digest,
         "space_sha256": record["geometry_sha256"], "config_sha256": digest,
         "component_volumes_cc": [volume(region) / 1000 for region in regions],
         "air_probes": probes, "issues": issues,
