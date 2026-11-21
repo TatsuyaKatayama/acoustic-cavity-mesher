@@ -152,6 +152,19 @@ B1の元配置とB4の絶対座標BREPを使い、対象部品1つを簡略形�
 - 微小面・微小辺は、それぞれ独立した面積・長さしきい値で検出する。0を指定した項目は無効になる。簡略化の5 mm目安とは用途が異なる。
 - 検査の終了コードはOKが0、NGが2、入力・実行エラーが1。漏れ・開口の判定は指定点と空間成分に基づく。開口の幅や断面積の計測は別途必要。
 
+## B6のテンプレート登録
+
+B4のフィット・簡略化判定、B5の接合・空間検査がすべてOKの場合に登録する。B4照合は `--report` でJSONを保存する。過去のレポートで登録用の照合情報が不足する場合は、現在の照合CLIでレポートを作り直す。
+
+```powershell
+& .\.venv\Scripts\python.exe .\check_trial_fit.py .\b1-output .\b1-output\template .\b1-output\fit --length-tolerance-mm 0.01 --max-error-cc 0.01 --report .\b1-output\fit-check.json
+& .\.venv\Scripts\python.exe .\register_template.py .\b1-output .\b1-output\template .\b1-output\fit .\b1-output\trial-space .\b1-output\registry --version 1 --fit-report .\b1-output\fit-check.json --contact-report .\b1-output\reassembly-check.json --space-report .\b1-output\space-check.json --space-config .\b1-output\space-config.json
+```
+
+登録先は例では `b1-output/registry/mounting_block/v1/`。同じ版は上書きできない。テンプレートのCadQueryコード、`registration.json`、B3〜B5の記録、判定レポート、空間設定を保存する。B1・B3・B4・B5の対応をハッシュで照合するため、別の実行のレポートや生成物では登録できない。元CADと検証用BREPは元の検証ディレクトリに保管する。
+
+`registration.json` には、対象にできる形状、パラメータの成立条件、実際に通過した寸法、名前付き面、成果物のハッシュを記録する。初期版は1回の検証につき1寸法セットを保存し、そのケースを実績とする。AのNGを受けた改訂では、該当モデルでB4・B5を再実行し、必要に応じて `--regression-case` で元のNG記録の識別子を残す。
+
 ## 最初の実装範囲
 
 1. **B1 抽出**。STEPアセンブリ1件から部品と配置を取得し、部品名・配置ID・単位を一覧に出す。対象部品と周辺部品を後続処理へ渡せるようにする。
