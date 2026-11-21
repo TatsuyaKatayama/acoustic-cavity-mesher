@@ -120,6 +120,38 @@ uv pip install --python .\.venv\Scripts\python.exe PySide6-Essentials
 
 照合はJSONを標準出力に出し、終了コードはOKが0、NGが2、入力・実行エラーが1。円筒側面が高さ全体にわたる貫通穴を1つ特定できる取付ブロックを対象とする。穴を一意に特定できない場合などは入力エラーを返す。
 
+## B5の再組み立てと空間検証
+
+B1の元配置とB4の絶対座標BREPを使い、対象部品1つを簡略形状に置き換える。ほかの部品はB1の形状・配置を使う。接合面はB2から引き継いだ参照で照合し、正を隙間、負を食い込みとして記録する。重なり面積は元の詳細面ペアに対する比で判定し、対象部品と周辺部品のソリッド同士の食い込み体積も確認する。
+
+```powershell
+& .\.venv\Scripts\python.exe .\check_reassembly.py .\b1-output .\b1-output\fit .\b1-output\reassembly-check.json --min-overlap-ratio 0.95 --max-interference-mm3 0.01
+& .\.venv\Scripts\python.exe .\build_trial_space.py .\b1-output .\b1-output\fit .\b1-output\reassembly-check.json .\b1-output\space-config.json .\b1-output\trial-space
+& .\.venv\Scripts\python.exe .\check_trial_space.py .\b1-output\space-config.json .\b1-output\trial-space .\b1-output\space-check.json
+```
+
+2番目のコマンドは、同じB1・B4に対する接合チェックのOKレポートを要求する。円筒から再組み立てに使った全ソリッドと、指定があれば外側埋め用のBREPを差し引き、`space.brep` と由来を記録した `space.json` を出力する。
+
+`space-config.json` の例。円筒と検査点はアセンブリの絶対座標で指定する。しきい値と座標は対象モデルに合わせて決める。
+
+```json
+{
+  "schema_version": 1,
+  "length_unit": "mm",
+  "cylinder": {"origin_mm": [0, 0, 0], "axis": [0, 0, 1], "radius_mm": 50, "height_mm": 100},
+  "outside_fill_breps": [],
+  "air_regions": [{"name": "cavity", "probes_mm": [[0, 0, 20], [0, 0, 80]]}],
+  "exterior_probes_mm": [[48, 0, 50]],
+  "min_face_area_mm2": 0.01,
+  "min_edge_length_mm": 0.05
+}
+```
+
+- 同じ `air_regions` グループの点は同じ空間成分に入ることを確認する。開口の連通を見る場合は、開口内とその両側に点を置く。別グループ同士の意図しない連通と、検査点で説明できない空間成分もNGにする。
+- `exterior_probes_mm` には、円筒内でケーシングや外側埋めが占めるべき位置を指定する。差し引き後に空気が残っていればNG。外側埋め用BREPの相対パスは設定ファイルを基準とし、形状は絶対座標で用意する。
+- 微小面・微小辺は、それぞれ独立した面積・長さしきい値で検出する。0を指定した項目は無効になる。簡略化の5 mm目安とは用途が異なる。
+- 検査の終了コードはOKが0、NGが2、入力・実行エラーが1。漏れ・開口の判定は指定点と空間成分に基づく。開口の幅や断面積の計測は別途必要。
+
 ## 最初の実装範囲
 
 1. **B1 抽出**。STEPアセンブリ1件から部品と配置を取得し、部品名・配置ID・単位を一覧に出す。対象部品と周辺部品を後続処理へ渡せるようにする。

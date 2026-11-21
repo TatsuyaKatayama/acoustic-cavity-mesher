@@ -7,21 +7,13 @@ from math import isfinite
 from pathlib import Path
 
 from OCP.BRepAlgoAPI import BRepAlgoAPI_Common
-from OCP.BRepGProp import BRepGProp
-from OCP.GProp import GProp_GProps
 from OCP.TopoDS import TopoDS
 
 from b2_faces import load_parts
 from b4_geometry import (
     ANGULAR_TOL_RAD, bounds, fitting_frame, indexed_faces, measurements, plane_and_normal,
-    read_brep, read_record, template_source, to_local,
+    read_brep, read_record, template_source, to_local, volume,
 )
-
-
-def volume(shape):
-    properties = GProp_GProps()
-    BRepGProp.VolumeProperties_s(shape, properties, True)
-    return abs(properties.Mass())
 
 
 def check_fit(bundle_digest, parts, template_path, result, length_tol, max_error_cc):
