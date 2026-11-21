@@ -11,8 +11,10 @@ from OCP.BRep import BRep_Builder
 from OCP.BRepAdaptor import BRepAdaptor_Surface
 from OCP.BRepBndLib import BRepBndLib
 from OCP.BRepClass3d import BRepClass3d_SolidClassifier
+from OCP.BRepGProp import BRepGProp
 from OCP.BRepTools import BRepTools
 from OCP.GeomAbs import GeomAbs_Cylinder, GeomAbs_Plane
+from OCP.GProp import GProp_GProps
 from OCP.gp import gp_Ax3, gp_Dir, gp_Pnt, gp_Trsf, gp_Vec
 from OCP.TopAbs import TopAbs_FACE, TopAbs_OUT, TopAbs_REVERSED, TopAbs_SOLID
 from OCP.TopExp import TopExp
@@ -78,6 +80,12 @@ def bounds(shape):
     if box.IsVoid() or box.IsOpen():
         raise ValueError("Expected finite part bounds")
     return box.Get()
+
+
+def volume(shape):
+    properties = GProp_GProps()
+    BRepGProp.VolumeProperties_s(shape, properties, True)
+    return abs(properties.Mass())
 
 
 def plane_and_normal(face):
