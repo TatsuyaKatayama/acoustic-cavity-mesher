@@ -13,10 +13,11 @@ from OCP.V3d import V3d_Viewer
 from OCP.WNT import WNT_Window
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
-    QApplication, QHBoxLayout, QLabel, QMessageBox, QPushButton, QVBoxLayout, QWidget,
+    QApplication, QComboBox, QHBoxLayout, QLabel, QMessageBox, QPushButton,
+    QVBoxLayout, QWidget,
 )
 
-from b2_faces import load_pair, load_parts, save_pair
+from b2_faces import load_candidates, load_pair, load_parts, save_pair
 
 
 def window_handle_capsule(widget):
@@ -88,6 +89,17 @@ class FaceView(QWidget):
         self.colored = {part_id for part_id, _ in pair}
         self.view.Redraw()
 
+    def show_parts(self, visible):
+        if self.context is None:
+            return
+        face_mode = AIS_Shape.SelectionMode_s(TopAbs_FACE)
+        for part_id, presentation in self.objects.items():
+            if visible is None or part_id in visible:
+                self.context.Display(presentation, 1, face_mode, False)
+            else:
+                self.context.Erase(presentation, False)
+        self.view.Redraw()
+
     def pick(self, x, y):
         self.context.MoveTo(x, y, self.view, False)
         if self.context.HasDetectedShape():
@@ -126,7 +138,7 @@ class FaceView(QWidget):
 
 
 class Review(QWidget):
-    def __init__(self, parts, digest, path):
+    def __init__(self, parts, digest, path, candidates=None):
         super().__init__()
         self.digest = digest
         self.path = path
@@ -136,6 +148,16 @@ class Review(QWidget):
         self.resize(920, 660)
         self.view = FaceView(parts)
         self.status = QLabel()
+        self.candidate_picker = QComboBox()
+        if candidates is not None:
+            self.candidate_picker.addItem("接合候補を選択" if candidates else "条件に合う候補なし")
+            for pair, gap, area in candidates:
+                label = " ↔ ".join(f"{part_id} 面 {index}" for part_id, index in pair)
+                self.candidate_picker.addItem(f"{label} | 隙間 {gap:.6g} mm | 重なり {area:.6g} mm²", pair)
+            self.candidate_picker.currentIndexChanged.connect(self.choose_candidate)
+        self.side = QComboBox()
+        self.side.addItems(["全部品を表示", "選択した1面目の部品だけ", "選択した2面目の部品だけ"])
+        self.side.currentIndexChanged.connect(self.update_visibility)
         self.save_button = QPushButton("保存")
         self.save_button.clicked.connect(self.save)
         clear = QPushButton("選択をクリア")
@@ -147,7 +169,10 @@ class Review(QWidget):
         for button in (fit, clear, self.save_button):
             controls.addWidget(button)
         controls.addStretch()
+        controls.addWidget(self.side)
         layout = QVBoxLayout(self)
+        if candidates is not None:
+            layout.addWidget(self.candidate_picker)
         layout.addWidget(self.view, 1)
         layout.addWidget(self.status)
         layout.addLayout(controls)
@@ -157,14 +182,29 @@ class Review(QWidget):
         label = "  ↔  ".join(f"{part_id} 面 {index}" for part_id, index in self.pair)
         self.status.setText(label or "別々の部品から面を選択してください。右ドラッグで回転、ホイールで拡大・縮小。")
         self.save_button.setEnabled(len(self.pair) == 2)
+        self.side.setEnabled(len(self.pair) == 2)
+
+    def choose_candidate(self, index):
+        if index > 0:
+            self.side.setCurrentIndex(0)
+            self.pair = [tuple(face) for face in self.candidate_picker.itemData(index)]
+            self.update_pair()
+
+    def update_visibility(self, index):
+        visible = {self.pair[index - 1][0]} if index and len(self.pair) == 2 else None
+        self.view.show_parts(visible)
 
     def select(self, part_id, index):
+        self.side.setCurrentIndex(0)
+        self.candidate_picker.setCurrentIndex(0)
         if len(self.pair) == 2 or (self.pair and self.pair[0][0] == part_id):
             self.pair.clear()
         self.pair.append((part_id, index))
         self.update_pair()
 
     def clear(self):
+        self.side.setCurrentIndex(0)
+        self.candidate_picker.setCurrentIndex(0)
         self.pair.clear()
         self.update_pair()
 
@@ -182,11 +222,13 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("bundle", type=Path, help="B1 extraction directory")
     parser.add_argument("pair", type=Path, help="JSON face pair to open or save")
+    parser.add_argument("--candidates", type=Path, help="JSON from propose_contacts.py")
     args = parser.parse_args()
     try:
         digest, parts = load_parts(args.bundle)
+        candidates = load_candidates(args.candidates, digest, parts) if args.candidates else None
         app = QApplication([])
-        review = Review(parts, digest, args.pair)
+        review = Review(parts, digest, args.pair, candidates)
         review.show()
         app.processEvents()
         review.view.initialize()

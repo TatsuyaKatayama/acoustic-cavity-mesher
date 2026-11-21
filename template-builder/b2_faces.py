@@ -79,6 +79,16 @@ def load_pair(path, manifest_digest, parts):
     return validate_pair(record["faces"], parts)
 
 
+def load_candidates(path, manifest_digest, parts):
+    record = json.loads(path.read_text(encoding="utf-8"))
+    if record["schema_version"] != 1 or record["manifest_sha256"] != manifest_digest:
+        raise ValueError("The candidates belong to a different B1 bundle")
+    return [
+        (validate_pair(item["faces"], parts), float(item["gap_mm"]), float(item["overlap_mm2"]))
+        for item in record["candidates"]
+    ]
+
+
 def save_pair(path, manifest_digest, pair, parts):
     record = {
         "schema_version": 1,
