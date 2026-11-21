@@ -40,6 +40,19 @@ uv pip install --python .\.venv\Scripts\python.exe cadquery
 - 照合は元のSTEPを読み直し、配置の欠落・重複、名前・親子関係・変換の差、形状ファイルの欠落・変更を報告する。JSONの状態と終了コードは `ok` が0、`ng` が2、入力・実行エラーが1。
 - 実機の入力と出力はGitの管理外に置く。上の出力ディレクトリ名 `b1-output` はGitで除外する。
 
+## B2の試作画面
+
+Windowsの対話セッションで、B1の抽出結果をOCCT AISに表示する。Qtの依存は同じ仮想環境に入れる。
+
+```powershell
+uv pip install --python .\.venv\Scripts\python.exe PySide6-Essentials
+& .\.venv\Scripts\python.exe .\review_faces.py .\b1-output .\b1-output\face-pair.json
+```
+
+異なる部品の面を左クリックで1面ずつ選ぶと、両面がオレンジ色になる。右ドラッグで回転、ホイールで拡大・縮小できる。「保存」を押してから同じコマンドで開くと、選択した面ペアを再表示する。
+
+試作版は1組の面ペアを扱う。面参照には部品配置IDとBREPの面インデックスを使い、保存データを元のB1マニフェストにひもづける。候補の自動提案と、寸法変更後も使える面の追跡は次の実装範囲。
+
 ## 最初の実装範囲
 
 1. **B1 抽出**。STEPアセンブリ1件から部品と配置を取得し、部品名・配置ID・単位を一覧に出す。対象部品と周辺部品を後続処理へ渡せるようにする。
