@@ -95,6 +95,10 @@ def save_pair(path, manifest_digest, pair, parts):
         "manifest_sha256": manifest_digest,
         "faces": validate_pair(pair, parts),
     }
+    write_json(path, record)
+
+
+def write_json(path, record):
     with NamedTemporaryFile(dir=path.parent, delete=False) as stream:
         temporary = Path(stream.name)
     try:
