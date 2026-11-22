@@ -40,7 +40,24 @@ uv pip install --python .\.venv\Scripts\python.exe cadquery
 - 照合は元のSTEPを読み直し、配置の欠落・重複、名前・親子関係・変換の差、形状ファイルの欠落・変更を報告する。JSONの状態と終了コードは `ok` が0、`ng` が2、入力・実行エラーが1。
 - 実機の入力と出力はGitの管理外に置く。上の出力ディレクトリ名 `b1-output` はGitで除外する。
 
-## B2の試作画面
+## WebビューアでCADを開く
+
+通常のCAD閲覧とCodexの画像確認には、OCP Viewer（three-cad-viewer）を使う。Qtはこの用途には不要。工程Bの仮想環境で次のコマンドを実行する。
+
+```powershell
+uv pip install --python .\.venv\Scripts\python.exe ocp_viewer
+& .\.venv\Scripts\python.exe -m ocp_viewer --host 127.0.0.1 --port 3939
+```
+
+[ローカルビューア](http://127.0.0.1:3939)をブラウザで開き、別のPowerShellからモデルを送る。
+
+```powershell
+& .\.venv\Scripts\python.exe .\view_cad.py ..\test-data\rotary-compressor-test.step --png .\b1-output\compressor.png
+```
+
+STEPアセンブリと絶対座標のBREPを表示できる。PNG保存にはビューアに接続したブラウザが必要。画像確認はCodexがPNGを読み、定量判定には従来のOCCT計測結果を使う。左右の視点同期と、ブラウザからB2の面参照を保存する接続は後続の実装範囲。
+
+## B2の接合面レビュー画面（Qt/AIS）
 
 Windowsの対話セッションで、B1の抽出結果をOCCT AISに表示する。Qtの依存は同じ仮想環境に入れる。
 
