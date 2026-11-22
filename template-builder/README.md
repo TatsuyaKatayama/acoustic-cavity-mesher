@@ -61,6 +61,8 @@ STEPアセンブリと絶対座標のBREPを表示できる。PNG保存にはビ
 
 同じ絶対座標の詳細・簡易ファイルを渡す。ローカルの比較ページが開き、左に詳細、右に簡易を表示する。回転・パン・ズームを同期し、表示・非表示は各側のツリーで操作できる。
 
+各ビューの「ID確認」を押し、面やエッジをクリックすると、部品パスと選択要素のIDが表示される。選択フィルターで面またはエッジに絞り込める。表示IDは読み込んだモデル内でのビューアの参照番号で、STEPファイルの `#番号` や B1 の形状番号とは別に扱う。
+
 ```powershell
 & .\.venv\Scripts\python.exe .\compare_cad.py .\b1-output\comparison\detailed.brep .\b1-output\comparison\simplified.brep
 ```

@@ -12,6 +12,7 @@
   .heading { display: flex; align-items: center; gap: 6px; padding-right: 8px; }
   .heading h1, .heading h2 { margin-right: auto; }
   .heading button { font: inherit; color: inherit; background: white; border: 1px solid #b9c7d7; border-radius: 5px; padding: 3px 9px; cursor: pointer; }
+  .heading button[aria-pressed="true"] { background: #dbeafe; border-color: #6894c5; }
   .viewport { position: relative; min-width: 0; min-height: 0; overflow: hidden; contain: size layout; }
   .viewport .tcv_cad_navigation {
     display: flex !important;
@@ -21,16 +22,17 @@
   .viewport .tcv_cad_navigation > * { pointer-events: auto; }
   .viewport .tcv_cad_tree { flex: 1 1 0; min-height: 0; max-height: none !important; }
   .viewport .tcv_cad_info_wrapper { flex: 0 0 auto; max-height: 30%; min-height: 22px; }
+  .shape-ids { position: absolute; z-index: 110; bottom: 32px; right: 8px; max-width: 65%; margin: 0; padding: 8px; border: 1px solid #b9c7d7; border-radius: 5px; background: white; white-space: pre-wrap; overflow-wrap: anywhere; user-select: text; }
   #error:empty { display: none; }
   #error { position: fixed; z-index: 10000; bottom: 0; background: #fee2e2; padding: 10px; }
 </style>
 <main>
   <section>
-    <div class="heading"><h1>詳細形状</h1><button data-tool="distance">距離計測</button><button data-tool="properties">形状プロパティ</button><button data-tool="off">操作に戻る</button></div>
+    <div class="heading"><h1>詳細形状</h1><button data-tool="distance">距離計測</button><button data-tool="properties">形状プロパティ</button><button data-tool="select" aria-pressed="false">ID確認</button><button data-tool="off">操作に戻る</button></div>
     <div id="detailed" class="viewport"></div>
   </section>
   <section>
-    <div class="heading"><h2>簡易形状</h2><button data-tool="distance">距離計測</button><button data-tool="properties">形状プロパティ</button><button data-tool="off">操作に戻る</button></div>
+    <div class="heading"><h2>簡易形状</h2><button data-tool="distance">距離計測</button><button data-tool="properties">形状プロパティ</button><button data-tool="select" aria-pressed="false">ID確認</button><button data-tool="off">操作に戻る</button></div>
     <div id="simplified" class="viewport"></div>
   </section>
 </main>
@@ -66,6 +68,11 @@
 
   function mount(id, index, model) {
     const container = document.getElementById(id);
+    const output = document.createElement("pre");
+    output.className = "shape-ids";
+    output.setAttribute("aria-live", "polite");
+    output.hidden = true;
+    const instruction = "上部のフィルターで Face または Edge を選び、対象をクリック。";
     for (const event of ["pointerdown", "wheel", "keydown"]) {
       container.addEventListener(event, () => { activePane = index; }, { capture: true, passive: true });
     }
@@ -84,11 +91,23 @@
         },
         viewer: { control: "trackball", up: "Z", tools: true, glass: true },
       },
-      send: (type, status) => onStatus(index, type, status),
+      send: (type, status) => {
+        if (!output.hidden && type === "status" && status.selected !== undefined) {
+          const lines = Object.entries(status.selected ?? {})
+            .map(([path, ids]) => `${path}: ${ids.join(", ")}`);
+          output.textContent = lines.length ? lines.join("\n") : instruction;
+        }
+        onStatus(index, type, status);
+      },
     });
     page.handleMessage(model);
+    container.append(output);
+    const idButton = container.parentElement.querySelector('[data-tool="select"]');
     container.parentElement.querySelectorAll("[data-tool]").forEach((button) => {
       button.addEventListener("click", () => {
+        output.hidden = button !== idButton;
+        idButton.setAttribute("aria-pressed", String(!output.hidden));
+        output.textContent = instruction;
         page.handleMessage({ type: "ui", config: { analysisTool: button.dataset.tool } });
       });
     });
