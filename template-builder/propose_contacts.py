@@ -1,4 +1,4 @@
-"""Propose pairs of opposing planar faces from the placed B1 geometry."""
+"""Propose opposing planar and coaxial cylindrical faces from placed B1 geometry."""
 
 import argparse
 from itertools import combinations
@@ -11,9 +11,10 @@ from OCP.BRepAdaptor import BRepAdaptor_Surface
 from OCP.BRepAlgoAPI import BRepAlgoAPI_Common
 from OCP.BRepBndLib import BRepBndLib
 from OCP.BRepGProp import BRepGProp
-from OCP.GeomAbs import GeomAbs_Plane
+from OCP.BRepOffsetAPI import BRepOffsetAPI_MakeOffsetShape
+from OCP.GeomAbs import GeomAbs_Plane, GeomAbs_Cylinder
 from OCP.GProp import GProp_GProps
-from OCP.gp import gp_Trsf, gp_Vec
+from OCP.gp import gp_Trsf, gp_Vec, gp_Lin
 from OCP.TopAbs import TopAbs_FORWARD, TopAbs_REVERSED
 from OCP.TopLoc import TopLoc_Location
 from OCP.TopoDS import TopoDS
@@ -54,32 +55,101 @@ def common_area(first, second, normal, gap):
     if not common.IsDone():
         raise RuntimeError("Failed to measure overlap of planar faces")
     properties = GProp_GProps()
-    BRepGProp.SurfaceProperties_s(common.Shape(), properties)
+    BRepGProp.SurfaceProperties_s(common.Shape(), properties, 1e-9)
     return properties.Mass()
+
+
+def surface_area_common(first, second):
+    common = BRepAlgoAPI_Common(first, second)
+    if not common.IsDone():
+        raise RuntimeError("Failed to measure trimmed contact overlap")
+    properties = GProp_GProps()
+    BRepGProp.SurfaceProperties_s(common.Shape(), properties, 1e-9)
+    return properties.Mass()
+
+
+def measure_contact(first, second):
+    """Exact trimmed overlap; cylinders use the smaller radius as area reference.
+
+    Only parallel opposing planes and coaxial inward/outward cylinders are
+    supported. Interference is rejected, not converted to a positive gap.
+    """
+    orientations = (first.Orientation(), second.Orientation())
+    if any(o not in (TopAbs_FORWARD, TopAbs_REVERSED) for o in orientations):
+        return None
+    surfaces = (BRepAdaptor_Surface(first), BRepAdaptor_Surface(second))
+    types = tuple(s.GetType() for s in surfaces)
+    if types == (GeomAbs_Plane, GeomAbs_Plane):
+        planes = [s.Plane() for s in surfaces]
+        normals = [p.Axis().Direction() for p in planes]
+        for normal, plane, orientation in zip(normals, planes, orientations):
+            if (orientation == TopAbs_REVERSED) != (not plane.Direct()):
+                normal.Reverse()
+        if not normals[0].IsOpposite(normals[1], ANGULAR_TOLERANCE_RAD):
+            return None
+        gap = gp_Vec(planes[0].Location(), planes[1].Location()).Dot(gp_Vec(normals[0]))
+        if gap < -LINEAR_TOLERANCE_MM:
+            return None
+        area = common_area(first, second, normals[0], gap)
+        kind = "planar"
+    elif types == (GeomAbs_Cylinder, GeomAbs_Cylinder):
+        cylinders = [s.Cylinder() for s in surfaces]
+        outward = [(o == TopAbs_FORWARD) == c.Direct() for o, c in zip(orientations, cylinders)]
+        if outward[0] == outward[1]:
+            return None
+        axes = [c.Axis() for c in cylinders]
+        if not axes[0].Direction().IsParallel(axes[1].Direction(), ANGULAR_TOLERANCE_RAD):
+            return None
+        if gp_Lin(axes[0]).Distance(axes[1].Location()) > LINEAR_TOLERANCE_MM:
+            return None
+        radii = [c.Radius() for c in cylinders]
+        outer = outward.index(True)
+        inner = 1 - outer
+        gap = radii[inner] - radii[outer]
+        if gap < -LINEAR_TOLERANCE_MM:
+            return None
+        projected = [first, second]
+        larger = 0 if radii[0] > radii[1] else 1
+        difference = min(radii) - radii[larger]
+        if abs(difference) > 1e-12:
+            # Offset follows oriented face normals. This preserves trimmed wires,
+            # including openings, without scaling the axial coordinate.
+            offset = BRepOffsetAPI_MakeOffsetShape()
+            offset.PerformBySimple(projected[larger], difference * (1 if outward[larger] else -1))
+            if not offset.IsDone():
+                raise RuntimeError("Failed to project cylindrical contact face")
+            projected[larger] = offset.Shape()
+        area = surface_area_common(*projected)
+        kind = "cylindrical"
+    else:
+        return None
+    if area <= 1e-12:
+        return None
+    return {"contact_type": kind, "gap_mm": max(0.0, gap), "overlap_mm2": area}
 
 
 def propose(parts, max_gap, min_overlap):
     candidates = []
     boxes = {part_id: bounds(shape) for part_id, (shape, _) in parts.items()}
-    faces = {part_id: list(planar_faces(index)) for part_id, (_, index) in parts.items()}
+    faces = {}
+    for part_id, (_, index) in parts.items():
+        faces[part_id] = []
+        for i in range(1, index.Extent() + 1):
+            face = TopoDS.Face_s(index.FindKey(i))
+            if BRepAdaptor_Surface(face).GetType() in (GeomAbs_Plane, GeomAbs_Cylinder):
+                faces[part_id].append((i, face, bounds(face)))
     for first_id, second_id in combinations(parts, 2):
         if boxes[first_id].Distance(boxes[second_id]) > max_gap + LINEAR_TOLERANCE_MM:
             continue
-        for i, first, first_origin, normal, first_box in faces[first_id]:
-            for j, second, second_origin, other_normal, second_box in faces[second_id]:
-                if not normal.IsOpposite(other_normal, ANGULAR_TOLERANCE_RAD):
-                    continue
+        for i, first, first_box in faces[first_id]:
+            for j, second, second_box in faces[second_id]:
                 if first_box.Distance(second_box) > max_gap + LINEAR_TOLERANCE_MM:
                     continue
-                gap = gp_Vec(first_origin, second_origin).Dot(gp_Vec(normal))
-                if not -LINEAR_TOLERANCE_MM <= gap <= max_gap + LINEAR_TOLERANCE_MM:
-                    continue
-                area = common_area(first, second, normal, gap)
-                if area >= min_overlap:
+                measurement = measure_contact(first, second)
+                if measurement and measurement["gap_mm"] <= max_gap + LINEAR_TOLERANCE_MM and measurement["overlap_mm2"] >= min_overlap:
                     candidates.append({
                         "faces": [[first_id, i], [second_id, j]],
-                        "gap_mm": max(0.0, gap),
-                        "overlap_mm2": area,
+                        **measurement,
                     })
     return sorted(candidates, key=lambda item: (item["gap_mm"], -item["overlap_mm2"], item["faces"]))
 

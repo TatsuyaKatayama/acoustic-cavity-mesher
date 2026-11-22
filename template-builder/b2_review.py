@@ -5,6 +5,8 @@ import json
 from math import isfinite
 
 from b2_faces import load_candidates, validate_pair
+from OCP.TopoDS import TopoDS
+from propose_contacts import measure_contact
 
 
 def open_review(bundle_digest, parts, candidate_path, draft_path):
@@ -68,10 +70,15 @@ def make_handoff(draft, parts):
         if signature in used_pairs:
             raise ValueError(f"Duplicate accepted face pair at candidate {item['candidate_id']}")
         used_pairs.add(signature)
+        measurement = measure_contact(*(TopoDS.Face_s(parts[p][1].FindKey(i)) for p, i in pair))
+        if measurement is None:
+            raise ValueError(f"Unsupported or non-overlapping accepted faces at candidate {item['candidate_id']}")
         constraints.append({
             "candidate_id": item["candidate_id"],
             "faces": pair,
             **item["condition"],
+            "contact_type": measurement["contact_type"],
+            "source_measurement": measurement,
         })
     return {
         "schema_version": 1,
