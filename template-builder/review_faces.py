@@ -5,9 +5,10 @@ import ctypes
 from pathlib import Path
 
 from OCP.AIS import AIS_ColoredShape, AIS_InteractiveContext, AIS_Shape
-from OCP.Aspect import Aspect_DisplayConnection
+from OCP.Aspect import Aspect_DisplayConnection, Aspect_TOL_SOLID
 from OCP.OpenGl import OpenGl_GraphicDriver
-from OCP.Quantity import Quantity_Color, Quantity_NOC_GRAY70, Quantity_NOC_ORANGE
+from OCP.Prs3d import Prs3d_LineAspect
+from OCP.Quantity import Quantity_Color, Quantity_NOC_GRAY20, Quantity_NOC_GRAY70, Quantity_NOC_ORANGE
 from OCP.TopAbs import TopAbs_FACE
 from OCP.V3d import V3d_Viewer
 from OCP.WNT import WNT_Window
@@ -63,6 +64,11 @@ class FaceView(QWidget):
             presentation = AIS_ColoredShape(shape)
             self.objects[part_id] = presentation
             presentation.SetColor(Quantity_Color(Quantity_NOC_GRAY70))
+            drawer = presentation.Attributes()
+            drawer.SetFaceBoundaryDraw(True)
+            drawer.SetFaceBoundaryAspect(
+                Prs3d_LineAspect(Quantity_Color(Quantity_NOC_GRAY20), Aspect_TOL_SOLID, 1.0)
+            )
             self.context.Display(presentation, 1, face_mode, False)
         self.fit()
 
