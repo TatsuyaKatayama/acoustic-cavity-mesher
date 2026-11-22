@@ -20,6 +20,9 @@ from PySide6.QtWidgets import (
 from b2_faces import load_candidates, load_pair, load_parts, save_pair
 
 
+VIEW_CONTROLS = "Ctrl＋左ドラッグで回転、Shift＋左ドラッグで移動、2本指スクロールまたは ＋／− でズーム"
+
+
 def window_handle_capsule(widget):
     # OCP binds the native HWND as a capsule and Qt exposes it as an integer.
     make_capsule = ctypes.pythonapi.PyCapsule_New
@@ -38,6 +41,9 @@ class FaceView(QWidget):
         self.view = None
         self.objects = {}
         self.colored = set()
+        self.drag = None
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self.setToolTip(VIEW_CONTROLS)
         self.setAttribute(Qt.WidgetAttribute.WA_NativeWindow)
         self.setAttribute(Qt.WidgetAttribute.WA_PaintOnScreen)
         self.setAttribute(Qt.WidgetAttribute.WA_NoSystemBackground)
@@ -120,21 +126,61 @@ class FaceView(QWidget):
     def mousePressEvent(self, event):
         if self.view is None:
             return
+        self.setFocus()
         x, y = self.mouse_xy(event)
-        if event.button() == Qt.MouseButton.RightButton:
+        button = event.button()
+        left = button == Qt.MouseButton.LeftButton
+        modifiers = event.modifiers()
+        if button == Qt.MouseButton.RightButton or (left and modifiers & Qt.KeyboardModifier.ControlModifier):
+            self.drag = ("rotate", button, x, y)
             self.view.StartRotation(x, y)
-        elif event.button() == Qt.MouseButton.LeftButton:
+        elif button == Qt.MouseButton.MiddleButton or (left and modifiers & Qt.KeyboardModifier.ShiftModifier):
+            self.drag = ("pan", button, x, y)
+        elif left:
             face = self.pick(x, y)
             if face is not None:
                 self.face_clicked.emit(*face)
 
     def mouseMoveEvent(self, event):
-        if self.view is not None and event.buttons() & Qt.MouseButton.RightButton:
-            self.view.Rotation(*self.mouse_xy(event))
+        if self.drag is None:
+            return
+        mode, button, previous_x, previous_y = self.drag
+        if not event.buttons() & button:
+            self.drag = None
+            return
+        x, y = self.mouse_xy(event)
+        if mode == "rotate":
+            self.view.Rotation(x, y)
+        else:
+            self.view.Pan(x - previous_x, previous_y - y)
+        self.drag = (mode, button, x, y)
+
+    def mouseReleaseEvent(self, event):
+        if self.drag is not None and event.button() == self.drag[1]:
+            self.drag = None
 
     def wheelEvent(self, event):
-        if self.view is not None:
-            self.view.SetZoom(1.15 ** (event.angleDelta().y() / 120))
+        if self.view is None:
+            return
+        steps = event.angleDelta().y() / 120 or event.pixelDelta().y() / 60
+        if steps:
+            self.view.SetZoom(1.15 ** steps)
+            event.accept()
+        else:
+            event.ignore()
+
+    def keyPressEvent(self, event):
+        if self.view is None:
+            return
+        key = event.key()
+        if key in (Qt.Key.Key_Plus, Qt.Key.Key_Equal):
+            self.view.SetZoom(1.15)
+        elif key == Qt.Key.Key_Minus:
+            self.view.SetZoom(1 / 1.15)
+        elif key == Qt.Key.Key_F:
+            self.fit()
+        else:
+            super().keyPressEvent(event)
 
 
 class Review(QWidget):
@@ -174,13 +220,14 @@ class Review(QWidget):
         if candidates is not None:
             layout.addWidget(self.candidate_picker)
         layout.addWidget(self.view, 1)
+        layout.addWidget(QLabel(VIEW_CONTROLS))
         layout.addWidget(self.status)
         layout.addLayout(controls)
 
     def update_pair(self):
         self.view.color_pair(self.pair)
         label = "  ↔  ".join(f"{part_id} 面 {index}" for part_id, index in self.pair)
-        self.status.setText(label or "別々の部品から面を選択してください。右ドラッグで回転、ホイールで拡大・縮小。")
+        self.status.setText(label or "別々の部品から面を選択してください。")
         self.save_button.setEnabled(len(self.pair) == 2)
         self.side.setEnabled(len(self.pair) == 2)
 
