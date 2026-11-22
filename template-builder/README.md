@@ -55,7 +55,17 @@ uv pip install --python .\.venv\Scripts\python.exe ocp_viewer
 & .\.venv\Scripts\python.exe .\view_cad.py ..\test-data\rotary-compressor-test.step --png .\b1-output\compressor.png
 ```
 
-STEPアセンブリと絶対座標のBREPを表示できる。PNG保存にはビューアに接続したブラウザが必要。画像確認はCodexがPNGを読み、定量判定には従来のOCCT計測結果を使う。左右の視点同期と、ブラウザからB2の面参照を保存する接続は後続の実装範囲。
+STEPアセンブリと絶対座標のBREPを表示できる。PNG保存にはビューアに接続したブラウザが必要。画像確認はCodexがPNGを読み、定量判定には従来のOCCT計測結果を使う。ブラウザからB2の面参照を保存する接続は後続の実装範囲。
+
+### 詳細・簡易の視点同期
+
+同じ絶対座標の詳細・簡易ファイルを渡す。ローカルの比較ページが開き、左に詳細、右に簡易を表示する。回転・パン・ズームを同期し、表示・非表示は各側のツリーで操作できる。
+
+```powershell
+& .\.venv\Scripts\python.exe .\compare_cad.py .\b1-output\comparison\detailed.brep .\b1-output\comparison\simplified.brep
+```
+
+既定のURLは [比較画面](http://127.0.0.1:3940/)。比較画面はインストール済みのthree-cad-viewerを2つ埋め込む。形状変換では OCP Viewer Core の内部オフラインAPIを使うため、更新時は互換性を確認する。動作確認済みの組み合わせは `ocp-viewer 1.3.0` と `ocp-viewer-core 1.2.0`。
 
 ## B2の接合面レビュー画面（Qt/AIS）
 

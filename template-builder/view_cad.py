@@ -8,6 +8,15 @@ import cadquery as cq
 from b4_geometry import read_brep
 
 
+def load_model(path):
+    extension = path.suffix.lower()
+    if extension in (".step", ".stp"):
+        return cq.Assembly.load(str(path), importType="STEP")
+    if extension == ".brep":
+        return cq.Shape.cast(read_brep(path.read_bytes()))
+    raise ValueError("Use a .step, .stp or .brep file")
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("model", type=Path, help="STEP assembly or BREP from the workflow")
@@ -21,15 +30,7 @@ def main():
 
         if args.png is not None and (args.png.suffix.lower() != ".png" or args.png.exists()):
             raise ValueError("--png requires a new .png path")
-        extension = args.model.suffix.lower()
-        if extension in (".step", ".stp"):
-            model = cq.Assembly.load(str(args.model), importType="STEP")
-        elif extension == ".brep":
-            model = cq.Shape.cast(read_brep(args.model.read_bytes()))
-        else:
-            raise ValueError("Use a .step, .stp or .brep file")
-
-        show(model, port=args.port, reset_camera=getattr(Camera, args.camera.upper()))
+        show(load_model(args.model), port=args.port, reset_camera=getattr(Camera, args.camera.upper()))
         if args.png is not None:
             path = args.png.resolve()
             path.parent.mkdir(parents=True, exist_ok=True)
