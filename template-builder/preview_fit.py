@@ -9,7 +9,7 @@ from PySide6.QtWidgets import QApplication, QLabel, QPushButton, QVBoxLayout, QW
 
 from b2_faces import load_parts
 from b4_geometry import indexed_faces, read_brep, read_record
-from review_faces import FaceView
+from review_faces import FaceView, VIEW_CONTROLS
 
 
 def overlay(bundle, result):
@@ -37,8 +37,9 @@ def main():
         fit = QPushButton("全体表示")
         fit.clicked.connect(view.fit)
         layout = QVBoxLayout(window)
-        layout.addWidget(QLabel("灰色（半透明）＝詳細形状　青＝試しフィット　右ドラッグで回転"))
+        layout.addWidget(QLabel("灰色（半透明）＝詳細形状　青＝試しフィット"))
         layout.addWidget(view, 1)
+        layout.addWidget(QLabel(VIEW_CONTROLS))
         layout.addWidget(fit)
         window.show()
         app.processEvents()

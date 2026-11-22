@@ -11,7 +11,7 @@ from PySide6.QtWidgets import (
 
 from b2_faces import load_parts, write_json
 from b2_review import open_review, validate_decision
-from review_faces import FaceView
+from review_faces import FaceView, VIEW_CONTROLS
 
 
 DECISIONS = {"pending": "未確認", "accepted": "採用", "rejected": "除外"}
@@ -79,6 +79,7 @@ class ContactReview(QWidget):
         layout = QVBoxLayout(self)
         layout.addWidget(self.picker)
         layout.addWidget(self.view, 1)
+        layout.addWidget(QLabel(VIEW_CONTROLS))
         layout.addLayout(viewing)
         layout.addLayout(conditions)
         layout.addWidget(self.notes)
