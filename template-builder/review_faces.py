@@ -17,7 +17,8 @@ from PySide6.QtWidgets import (
     QVBoxLayout, QWidget,
 )
 
-from b2_faces import load_candidates, load_pair, load_parts, save_pair
+from assembly_panel import AssemblyPanel
+from b2_faces import load_candidates, load_pair, load_scene, save_pair
 
 
 VIEW_CONTROLS = "Ctrl＋左ドラッグで回転、Shift＋左ドラッグで移動、2本指スクロールまたは ＋／− でズーム"
@@ -100,7 +101,10 @@ class FaceView(QWidget):
             return
         face_mode = AIS_Shape.SelectionMode_s(TopAbs_FACE)
         for part_id, presentation in self.objects.items():
-            if visible is None or part_id in visible:
+            wanted = visible is None or part_id in visible
+            if wanted == self.context.IsDisplayed(presentation):
+                continue
+            if wanted:
                 self.context.Display(presentation, 1, face_mode, False)
             else:
                 self.context.Erase(presentation, False)
@@ -184,15 +188,16 @@ class FaceView(QWidget):
 
 
 class Review(QWidget):
-    def __init__(self, parts, digest, path, candidates=None):
+    def __init__(self, parts, digest, path, candidates=None, *, nodes):
         super().__init__()
         self.digest = digest
         self.path = path
         self.parts = parts
         self.pair = load_pair(path, digest, parts) if path.exists() else []
         self.setWindowTitle("B2 接合面レビュー")
-        self.resize(920, 660)
+        self.resize(1160, 680)
         self.view = FaceView(parts)
+        self.assembly = AssemblyPanel(self.view, nodes)
         self.status = QLabel()
         self.candidate_picker = QComboBox()
         if candidates is not None:
@@ -202,7 +207,7 @@ class Review(QWidget):
                 self.candidate_picker.addItem(f"{label} | 隙間 {gap:.6g} mm | 重なり {area:.6g} mm²", pair)
             self.candidate_picker.currentIndexChanged.connect(self.choose_candidate)
         self.side = QComboBox()
-        self.side.addItems(["全部品を表示", "選択した1面目の部品だけ", "選択した2面目の部品だけ"])
+        self.side.addItems(["ツリーの表示設定", "選択した1面目の部品だけ", "選択した2面目の部品だけ"])
         self.side.currentIndexChanged.connect(self.update_visibility)
         self.save_button = QPushButton("保存")
         self.save_button.clicked.connect(self.save)
@@ -219,7 +224,7 @@ class Review(QWidget):
         layout = QVBoxLayout(self)
         if candidates is not None:
             layout.addWidget(self.candidate_picker)
-        layout.addWidget(self.view, 1)
+        layout.addWidget(self.assembly, 1)
         layout.addWidget(QLabel(VIEW_CONTROLS))
         layout.addWidget(self.status)
         layout.addLayout(controls)
@@ -238,8 +243,7 @@ class Review(QWidget):
             self.update_pair()
 
     def update_visibility(self, index):
-        visible = {self.pair[index - 1][0]} if index and len(self.pair) == 2 else None
-        self.view.show_parts(visible)
+        self.assembly.isolate(self.pair[index - 1][0] if index and len(self.pair) == 2 else None)
 
     def select(self, part_id, index):
         self.side.setCurrentIndex(0)
@@ -272,10 +276,10 @@ def main():
     parser.add_argument("--candidates", type=Path, help="JSON from propose_contacts.py")
     args = parser.parse_args()
     try:
-        digest, parts = load_parts(args.bundle)
+        digest, parts, nodes = load_scene(args.bundle)
         candidates = load_candidates(args.candidates, digest, parts) if args.candidates else None
         app = QApplication([])
-        review = Review(parts, digest, args.pair, candidates)
+        review = Review(parts, digest, args.pair, candidates, nodes=nodes)
         review.show()
         app.processEvents()
         review.view.initialize()

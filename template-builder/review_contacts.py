@@ -9,7 +9,8 @@ from PySide6.QtWidgets import (
     QMessageBox, QPushButton, QVBoxLayout, QWidget,
 )
 
-from b2_faces import load_parts, write_json
+from assembly_panel import AssemblyPanel
+from b2_faces import load_scene, write_json
 from b2_review import open_review, validate_decision
 from review_faces import FaceView, VIEW_CONTROLS
 
@@ -18,7 +19,7 @@ DECISIONS = {"pending": "未確認", "accepted": "採用", "rejected": "除外"}
 
 
 class ContactReview(QWidget):
-    def __init__(self, parts, candidates, draft, path):
+    def __init__(self, parts, candidates, draft, path, *, nodes):
         super().__init__()
         self.parts = parts
         self.candidates = candidates
@@ -29,8 +30,9 @@ class ContactReview(QWidget):
         self.loading = False
         self.dirty = False
         self.setWindowTitle("B2 接合候補レビュー")
-        self.resize(1080, 730)
+        self.resize(1280, 730)
         self.view = FaceView(parts)
+        self.assembly = AssemblyPanel(self.view, nodes)
         self.picker = QComboBox()
         for index in range(len(candidates)):
             self.picker.addItem(self.candidate_label(index))
@@ -38,7 +40,7 @@ class ContactReview(QWidget):
         self.faces = QLabel()
         self.status = QLabel()
         self.side = QComboBox()
-        self.side.addItems(["全部品", "1面目の部品のみ", "2面目の部品のみ"])
+        self.side.addItems(["ツリーの表示設定", "1面目の部品のみ", "2面目の部品のみ"])
         self.side.currentIndexChanged.connect(self.show_side)
         self.replace_side = QComboBox()
         self.replace_side.addItems(["面選択モード", "1面目をクリックで差し替え", "2面目をクリックで差し替え"])
@@ -78,7 +80,7 @@ class ContactReview(QWidget):
             conditions.addWidget(widget)
         layout = QVBoxLayout(self)
         layout.addWidget(self.picker)
-        layout.addWidget(self.view, 1)
+        layout.addWidget(self.assembly, 1)
         layout.addWidget(QLabel(VIEW_CONTROLS))
         layout.addLayout(viewing)
         layout.addLayout(conditions)
@@ -141,8 +143,7 @@ class ContactReview(QWidget):
         self.faces.setText(" ↔ ".join(f"{part_id} 面 {index}" for part_id, index in self.pair))
 
     def show_side(self, index):
-        visible = {self.pair[index - 1][0]} if index and self.pair else None
-        self.view.show_parts(visible)
+        self.assembly.isolate(self.pair[index - 1][0] if index and self.pair else None)
 
     def replace_face(self, part_id, face_index):
         side = self.replace_side.currentIndex()
@@ -206,10 +207,10 @@ def main():
     parser.add_argument("review", type=Path, help="Draft JSON to open or save")
     args = parser.parse_args()
     try:
-        digest, parts = load_parts(args.bundle)
+        digest, parts, nodes = load_scene(args.bundle)
         candidates, draft = open_review(digest, parts, args.candidates, args.review)
         app = QApplication([])
-        review = ContactReview(parts, candidates, draft, args.review)
+        review = ContactReview(parts, candidates, draft, args.review, nodes=nodes)
         review.show()
         app.processEvents()
         review.view.initialize()
