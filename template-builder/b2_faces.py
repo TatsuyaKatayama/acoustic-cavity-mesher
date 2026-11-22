@@ -17,7 +17,7 @@ from OCP.TopoDS import TopoDS_Shape
 from OCP.TopTools import TopTools_IndexedMapOfShape
 
 
-def load_parts(bundle):
+def load_scene(bundle):
     manifest_bytes = (bundle / "assembly.json").read_bytes()
     manifest = json.loads(manifest_bytes)
     if manifest["schema_version"] != 1 or manifest["length_unit"] != "mm":
@@ -50,7 +50,12 @@ def load_parts(bundle):
         parts[part_id] = (shape, faces)
     if len(parts) < 2:
         raise ValueError("A face pair requires at least two part instances")
-    return sha256(manifest_bytes).hexdigest(), parts
+    return sha256(manifest_bytes).hexdigest(), parts, manifest["nodes"]
+
+
+def load_parts(bundle):
+    digest, parts, _ = load_scene(bundle)
+    return digest, parts
 
 
 def validate_pair(pair, parts):
