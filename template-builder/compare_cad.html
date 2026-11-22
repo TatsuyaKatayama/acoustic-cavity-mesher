@@ -13,6 +13,14 @@
   .heading h1, .heading h2 { margin-right: auto; }
   .heading button { font: inherit; color: inherit; background: white; border: 1px solid #b9c7d7; border-radius: 5px; padding: 3px 9px; cursor: pointer; }
   .viewport { position: relative; min-width: 0; min-height: 0; overflow: hidden; contain: size layout; }
+  .viewport .tcv_cad_navigation {
+    display: flex !important;
+    height: max(0px, calc(100% - 90px)) !important;
+    pointer-events: none;
+  }
+  .viewport .tcv_cad_navigation > * { pointer-events: auto; }
+  .viewport .tcv_cad_tree { flex: 1 1 0; min-height: 0; max-height: none !important; }
+  .viewport .tcv_cad_info_wrapper { flex: 0 0 auto; max-height: 30%; min-height: 22px; }
   #error:empty { display: none; }
   #error { position: fixed; z-index: 10000; bottom: 0; background: #fee2e2; padding: 10px; }
 </style>
