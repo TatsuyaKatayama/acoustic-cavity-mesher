@@ -9,13 +9,22 @@
   main { display: grid; grid-template-columns: repeat(2, minmax(450px, 1fr)); height: 100dvh; gap: 2px; }
   section { display: grid; grid-template-rows: auto minmax(0, 1fr); min-width: 0; min-height: 0; }
   h1, h2 { margin: 0; padding: 9px 14px; font-size: 14px; font-weight: 600; }
+  .heading { display: flex; align-items: center; gap: 6px; padding-right: 8px; }
+  .heading h1, .heading h2 { margin-right: auto; }
+  .heading button { font: inherit; color: inherit; background: white; border: 1px solid #b9c7d7; border-radius: 5px; padding: 3px 9px; cursor: pointer; }
   .viewport { position: relative; min-width: 0; min-height: 0; overflow: hidden; contain: size layout; }
   #error:empty { display: none; }
   #error { position: fixed; z-index: 10000; bottom: 0; background: #fee2e2; padding: 10px; }
 </style>
 <main>
-  <section><h1>詳細形状</h1><div id="detailed" class="viewport"></div></section>
-  <section><h2>簡易形状</h2><div id="simplified" class="viewport"></div></section>
+  <section>
+    <div class="heading"><h1>詳細形状</h1><button data-tool="distance">距離計測</button><button data-tool="properties">形状プロパティ</button><button data-tool="off">操作に戻る</button></div>
+    <div id="detailed" class="viewport"></div>
+  </section>
+  <section>
+    <div class="heading"><h2>簡易形状</h2><button data-tool="distance">距離計測</button><button data-tool="properties">形状プロパティ</button><button data-tool="off">操作に戻る</button></div>
+    <div id="simplified" class="viewport"></div>
+  </section>
 </main>
 <p id="error" role="alert"></p>
 <script type="module">
@@ -62,12 +71,19 @@
       Viewer: PaneViewer, Display, Timer, container, listen: false, theme: "light",
       getSize: () => ({ width: container.clientWidth, height: container.clientHeight }),
       overrides: {
-        display: { theme: "light", glass: true, tools: true, treeWidth: 155 },
+        display: {
+          theme: "light", glass: true, tools: true, treeWidth: 220, externalMeasurementBackend: false,
+        },
         viewer: { control: "trackball", up: "Z", tools: true, glass: true },
       },
       send: (type, status) => onStatus(index, type, status),
     });
     page.handleMessage(model);
+    container.parentElement.querySelectorAll("[data-tool]").forEach((button) => {
+      button.addEventListener("click", () => {
+        page.handleMessage({ type: "ui", config: { analysisTool: button.dataset.tool } });
+      });
+    });
     window.addEventListener("resize", () => page.resize());
   }
 
