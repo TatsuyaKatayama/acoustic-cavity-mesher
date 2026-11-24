@@ -4,6 +4,7 @@ import {createPage} from '/assets/js/ocp-viewer-core/page.js';
 const $ = id => document.getElementById(id);
 const labels = {pending:'未確認',accepted:'採用',rejected:'除外'};
 let state, scene, page, viewer, row=0, current, dirty=false, loading=false, sequence=0, ready=false;
+let phase='contacts', simplifyRow=0, simplifyCurrent;
 const names={}, leaves={};
 function message(text,error=false){$('message').textContent=text;$('message').dataset.error=error;}
 async function api(path,data){
@@ -12,7 +13,23 @@ async function api(path,data){
 }
 function refKey(ref){return JSON.stringify(ref);}
 function markDirty(){dirty=true;message('未保存の変更があります。保存してから候補を切り替えてください。');controls();}
-function controls(){const accept=$('decision').value==='accepted';$('mode').disabled=!accept;$('target').disabled=!accept||$('mode').value!=='keep_gap';$('tolerance').disabled=!accept;$('save').disabled=loading||!ready||!current;}
+function controls(){
+  const accept=$('decision').value==='accepted';$('mode').disabled=!accept;$('target').disabled=!accept||$('mode').value!=='keep_gap';$('tolerance').disabled=!accept;$('save').disabled=loading||!ready||!current;
+  $('simplify-stage').disabled=!state?.contacts_complete||loading||!ready;
+  $('contacts-stage').disabled=loading||!ready;
+  $('candidate').disabled=loading;$('simplify-candidate').disabled=loading;
+  $('simplify-decision').disabled=loading||!simplifyCurrent;
+  $('simplify-notes').disabled=loading;
+  $('simplify-save').disabled=loading||!simplifyCurrent;
+  const record=state?.simplification;
+  $('simplify-finish').disabled=loading||!record||record.proposals.some(r=>r.decision==='pending')||(dirty&&record.proposals.length>0);
+  $('simplify-start').disabled=loading||!state?.contacts_complete;
+}
+function stageStatus(){
+  const text=!state.contacts_complete?'接合面レビューを全件保存すると簡略化レビューへ進めます。':state.simplification_status==='stale'?'接合面が変更されました。簡略化の削除提案を作り直してください。':state.simplification_status==='confirmed'?'接合面・簡略化レビューとも完了しています。':state.simplification?'接合面を保護して、削除提案をレビューしてください。':'接合面レビュー完了。次に簡略化の削除提案を作成してください。';
+  $('stage-status').textContent=text;controls();
+}
+function viewRefs(){return phase==='contacts'?(current?.faces||[]):(simplifyCurrent?[simplifyCurrent.face]:[]);}
 function fillList(){
   $('candidate').replaceChildren(...state.draft.reviews.map((r,i)=>{
     const refs=r.faces.map(f=>names[f[0]] || f[0]);const option=new Option(`${i+1} · ${labels[r.decision]} · ${refs.join(' / ')}`,i);return option;
@@ -25,11 +42,20 @@ function metrics(m){
 }
 async function measure(){const request=++sequence;$('metrics').textContent='OCCTで面ペアを計測中…';try{const result=await api('/api/measure',{faces:current.faces});if(request===sequence)metrics(result.measurement);}catch(e){if(request===sequence)message(e.message,true);}}
 function draw(){
-  if(!ready||!current)return;
-  const highlighted=new Set(current.faces.map(refKey));
+  if(!ready)return;
+  const refs=viewRefs();
+  const highlighted=new Set(refs.map(refKey));
+  const protectedFaces=new Set((state.simplification?.protected_faces||[]).map(refKey));
+  const proposals=new Map((state.simplification?.proposals||[]).map(r=>[refKey(r.face),r.decision]));
   let changed=false;
   for(const [path,ref] of Object.entries(scene.face_map)){
-    const color=highlighted.has(refKey(ref))?'#ff8c00':'#9eacbf';
+    const key=refKey(ref);
+    let color='#9eacbf';
+    if(phase==='simplification'){
+      if(protectedFaces.has(key))color='#16857b';
+      else if(proposals.has(key))color={pending:'#e16a86',keep:'#4a85c4',omit:'#d54848'}[proposals.get(key)];
+    }
+    if(highlighted.has(key))color='#ff8c00';
     if(leaves[path].color!==color){leaves[path].color=color;changed=true;}
   }
   if(changed){
@@ -39,7 +65,7 @@ function draw(){
     viewer.setCameraLocationSettings(camera.position,camera.quaternion,camera.target,camera.zoom,false);
   }
   const mode=$('isolate').value;
-  const ids= mode==='all'?null: mode==='pair'?current.faces.map(f=>f[0]):[current.faces[mode==='first'?0:1][0]];
+  const ids= mode==='all'||!refs.length?null: mode==='pair'||phase==='simplification'?refs.map(f=>f[0]):[refs[mode==='first'?0:1][0]];
   viewer.setStates(Object.fromEntries(Object.entries(scene.face_map).map(([path,ref])=>[path,!ids||ids.includes(ref[0])?[1,1]:[0,0]])));
   clip();
 }
@@ -55,9 +81,10 @@ function clip(){
   viewer.setLocalClipping($('clipaxis').value!=='off');
 }
 function fitVisible(){
-  if(!ready||!current)return;
+  if(!ready)return;
+  const refs=viewRefs();
   const mode=$('isolate').value;
-  const ids=mode==='all'?Object.keys(scene.part_bounds):mode==='pair'?current.faces.map(f=>f[0]):[current.faces[mode==='first'?0:1][0]];
+  const ids=mode==='all'||!refs.length?Object.keys(scene.part_bounds):mode==='pair'||phase==='simplification'?refs.map(f=>f[0]):[refs[mode==='first'?0:1][0]];
   const boxes=ids.map(id=>scene.part_bounds[id]);
   const low=[0,1,2].map(i=>Math.min(...boxes.map(b=>b[i]))),high=[0,1,2].map(i=>Math.max(...boxes.map(b=>b[i+3])));
   const target=low.map((v,i)=>(v+high[i])/2),camera=viewer.getCameraLocationSettings();
@@ -77,7 +104,7 @@ function loadRow(){
   if(page)page.handleMessage({type:'ui',config:{analysisTool:'off'}});
 }
 function selected(status){
-  if(!ready||!current||$('pick').value==='off'||!status.selected)return;
+  if(phase!=='contacts'||!ready||!current||$('pick').value==='off'||!status.selected)return;
   const refs=[];
   for(const [key,ids] of Object.entries(status.selected)){
     // Each rendered leaf is one BREP face. Accept only a Face selection on a
@@ -102,8 +129,61 @@ $('save').onclick=async()=>{
   try{loading=true;controls();const decision=$('decision').value;
     const mode=$('mode').value;
     const item={candidate_id:current.candidate_id,faces:current.faces,decision,condition:decision==='accepted'?{mode,target_gap_mm:mode==='close'?0:Number($('target').value),tolerance_mm:Number($('tolerance').value)}:null};
-    state=await api('/api/save',{revision:state.revision,item,simplification_notes:$('notes').value});fillList();loadRow();message('レビューをファイルに保存しました。');
+    state=await api('/api/save',{revision:state.revision,item,simplification_notes:$('notes').value});fillList();loadRow();stageStatus();message('接合面レビューをファイルに保存しました。');
   }catch(e){message(e.message,true);}finally{loading=false;controls();}
+};
+function loadSimplification(){
+  const record=state.simplification;
+  $('simplify-start-panel').hidden=!!record;$('simplify-review-panel').hidden=!record;
+  if(!record){simplifyCurrent=undefined;draw();controls();return;}
+  simplifyRow=Math.min(simplifyRow,Math.max(0,record.proposals.length-1));
+  const labels={pending:'未確認',keep:'残す',omit:'省略する'};
+  $('simplify-candidate').replaceChildren(...record.proposals.map((r,i)=>new Option(`${r.id} · ${labels[r.decision]} · ${names[r.face[0]]} 面${r.face[1]}`,i)));
+  $('simplify-candidate').value=simplifyRow;
+  const pending=record.proposals.filter(r=>r.decision==='pending').length;
+  $('simplify-progress').textContent=`削除提案 ${record.proposals.length} 面 / 未確認 ${pending} 面 / 保護する接合面 ${record.protected_faces.length} 面${record.confirmed?' · 確定済み':''}`;
+  simplifyCurrent=record.proposals[simplifyRow]?structuredClone(record.proposals[simplifyRow]):undefined;
+  $('simplify-notes').value=record.notes;
+  $('simplify-decision').disabled=!simplifyCurrent;
+  if(simplifyCurrent){
+    const m=simplifyCurrent.measurement;
+    const size=m.surface_type==='planar'?`面内幅 ${m.planar_spans_mm.map(v=>v.toFixed(4)).join(' × ')} mm`:`円筒径 ${m.diameter_mm.toFixed(4)} mm / 軸方向幅 ${m.axial_span_mm.toFixed(4)} mm`;
+    $('simplify-metrics').textContent=`${simplifyCurrent.reasons.join('\n')}\n${size}\n面積 ${m.area_mm2.toFixed(4)} mm²\n必要な開口・内壁は残してください。`;
+    $('simplify-refs').textContent=`${names[simplifyCurrent.face[0]]} · 配置 ${simplifyCurrent.face[0]} · BREP面 ${simplifyCurrent.face[1]}`;
+    $('simplify-decision').value=simplifyCurrent.decision;
+  }else{
+    $('simplify-metrics').textContent='削除提案はありません。すべての面を残す方針を確認して確定してください。';$('simplify-refs').textContent='';
+  }
+  dirty=false;draw();controls();
+  if(simplifyCurrent&&scene.unrendered_faces.some(ref=>refKey(ref)===refKey(simplifyCurrent.face)))message('描画できない面です。この画面で省略の判断は保存できません。',true);
+}
+function switchPhase(next){
+  if(dirty){message('未保存の変更を保存するか、戻してから工程を切り替えてください。',true);return;}
+  if(next==='simplification'&&!state.contacts_complete){message('接合面レビューを先に完了してください。',true);return;}
+  phase=next;$('contact-panel').hidden=phase!=='contacts';$('simplify-panel').hidden=phase!=='simplification';
+  $('contacts-stage').setAttribute('aria-pressed',String(phase==='contacts'));$('simplify-stage').setAttribute('aria-pressed',String(phase==='simplification'));
+  $('pick').value='off';$('pick').disabled=phase!=='contacts';$('isolate').value='pair';
+  for(const option of $('isolate').options)if(['first','second'].includes(option.value))option.disabled=phase!=='contacts';
+  page.handleMessage({type:'ui',config:{analysisTool:'off'}});message('');
+  if(phase==='contacts')loadRow();else loadSimplification();stageStatus();fitVisible();
+}
+const simplifyRequest=()=>({revision:state.revision,simplification_revision:state.simplification_revision});
+$('contacts-stage').onclick=()=>switchPhase('contacts');$('simplify-stage').onclick=()=>switchPhase('simplification');
+$('simplify-start').onclick=async()=>{
+  try{loading=true;controls();state=await api('/api/simplification/start',{...simplifyRequest(),threshold_mm:Number($('threshold').value)});loadSimplification();stageStatus();message('接合面を保護して削除提案を作成しました。');}
+  catch(e){message(e.message,true);}finally{loading=false;controls();}
+};
+$('simplify-candidate').onchange=()=>{if(dirty){$('simplify-candidate').value=simplifyRow;message('現在の簡略化判断を保存するか、戻してください。',true);return;}simplifyRow=Number($('simplify-candidate').value);loadSimplification();};
+for(const id of ['simplify-decision','simplify-notes'])$(id).addEventListener('input',markDirty);
+$('simplify-revert').onclick=()=>{loadSimplification();message('保存済みの簡略化判断に戻しました。');};
+$('simplify-save').onclick=async()=>{
+  if(!simplifyCurrent)return;
+  try{loading=true;controls();state=await api('/api/simplification/save',{...simplifyRequest(),item:{id:simplifyCurrent.id,decision:$('simplify-decision').value},notes:$('simplify-notes').value});loadSimplification();stageStatus();message('簡略化の判断を保存しました。');}
+  catch(e){message(e.message,true);}finally{loading=false;controls();}
+};
+$('simplify-finish').onclick=async()=>{
+  try{loading=true;controls();state=await api('/api/simplification/finish',{...simplifyRequest(),notes:$('simplify-notes').value});loadSimplification();stageStatus();message('簡略化レビューを確定しました。B3への出力は専用CLIで行います。');}
+  catch(e){message(e.message,true);}finally{loading=false;controls();}
 };
 window.addEventListener('beforeunload',event=>{if(dirty){event.preventDefault();event.returnValue='';}});
 try{
@@ -114,7 +194,7 @@ try{
   const container=$('viewport');
   class ReviewViewer extends Viewer{constructor(...args){super(...args);viewer=this;}}
   page=createPage({Viewer:ReviewViewer,Display,Timer,container,listen:false,theme:'light',getSize:()=>({width:container.clientWidth,height:container.clientHeight}),overrides:{display:{theme:'light',glass:true,tools:true,treeWidth:200,externalMeasurementBackend:false},viewer:{control:'trackball',up:'Z',tools:true,glass:true}},send:(type,status)=>{if(type==='status')selected(status);}});
-  page.handleMessage(scene.model);ready=true;fillList();
+  page.handleMessage(scene.model);ready=true;fillList();stageStatus();
   if(scene.unrendered_faces.length)$('renderwarning').textContent=`描画対象外の面 ${scene.unrendered_faces.length} 件: ${scene.unrendered_faces.map(f=>`${names[f[0]]} 面${f[1]}`).join('、')}。該当面を含む候補はこの画面では採用できません。`;
   if(state.draft.reviews.length){loadRow();fitVisible();}else{message('接合候補はありません。');$('save').disabled=true;}
   window.addEventListener('resize',()=>page.resize());

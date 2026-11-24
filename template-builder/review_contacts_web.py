@@ -15,6 +15,7 @@ from OCP.TopoDS import TopoDS
 
 from b2_faces import load_scene, validate_pair, write_json
 from b2_review import open_review, validate_decision
+from b2_simplification import build_proposal, validate_review
 from propose_contacts import measure_contact
 
 
@@ -120,7 +121,7 @@ def render_scene(parts, nodes=None):
 
 
 class ReviewSession:
-    def __init__(self, bundle, candidates, review):
+    def __init__(self, bundle, candidates, review, simplification_review=None):
         self.bundle, self.candidate_path, self.review_path = bundle, candidates, review
         self.digest, self.parts, self.nodes = load_scene(bundle)
         self.candidates, self.draft = open_review(self.digest, self.parts, candidates, review)
@@ -128,6 +129,7 @@ class ReviewSession:
         self.token = secrets.token_urlsafe(32)
         self.lock = Lock()
         self.unrendered_faces = []
+        self.simplification_path = simplification_review or review.with_name(review.stem+".simplification.json")
 
     def ensure_sources(self):
         if sha256((self.bundle / "assembly.json").read_bytes()).hexdigest() != self.digest or sha256(self.candidate_path.read_bytes()).hexdigest() != self.source_digest:
@@ -143,9 +145,85 @@ class ReviewSession:
         self.ensure_sources()
         _, draft = open_review(self.digest, self.parts, self.candidate_path, self.review_path)
         self.draft = draft
+        complete = all(row["decision"] != "pending" for row in draft["reviews"])
+        simplification = None
+        status, error = ("not_started" if complete else "locked"), ""
+        if self.simplification_path.exists():
+            try:
+                simplification = json.loads(self.simplification_path.read_text(encoding="utf-8"))
+                validate_review(simplification, draft, self.parts)
+                status = "confirmed" if simplification["confirmed"] else "reviewing"
+            except (ValueError, KeyError, TypeError) as exc:
+                status, error = ("stale" if complete else "locked"), str(exc)
+                simplification = None
         return {"draft": draft, "revision": self.revision(), "token": self.token,
                 "candidates": json.loads(self.candidate_path.read_text(encoding="utf-8"))["candidates"],
-                "nodes": self.nodes}
+                "nodes": self.nodes, "contacts_complete": complete,
+                "simplification": simplification, "simplification_status": status,
+                "simplification_error": error, "simplification_revision": self.simplification_revision()}
+
+    def simplification_revision(self):
+        return sha256(self.simplification_path.read_bytes()).hexdigest() if self.simplification_path.exists() else "new"
+
+    def check_revision(self, request, *, simplification=False):
+        self.ensure_sources()
+        if request["revision"] != self.revision():
+            raise ValueError("接合面レビューが更新されました。再読込してください。")
+        if simplification and request["simplification_revision"] != self.simplification_revision():
+            raise ValueError("簡略化レビューが別のタブで更新されました。再読込してください。")
+
+    def start_simplification(self, request):
+        with self.lock:
+            self.check_revision(request, simplification=True)
+            state = self.state()
+            if state["simplification"] is not None:
+                return state
+            record = build_proposal(self.parts, state["draft"], request.get("threshold_mm", 5))
+            if self.simplification_path.exists():
+                # Retain previous judgments when contacts change; regeneration is explicit.
+                old = self.simplification_path.read_bytes()
+                archive = self.simplification_path.with_name(self.simplification_path.stem+".previous-"+sha256(old).hexdigest()[:16]+".json")
+                if not archive.exists():
+                    with archive.open("xb") as stream:
+                        stream.write(old)
+            write_json(self.simplification_path, record)
+            return self.state()
+
+    def save_simplification(self, request):
+        with self.lock:
+            self.check_revision(request, simplification=True)
+            state = self.state()
+            record = deepcopy(state["simplification"])
+            if record is None:
+                raise ValueError("接合面レビューを完了し、削除提案を作成してください。")
+            item = request["item"]
+            index = item["id"]
+            if type(index) is not int or not 1 <= index <= len(record["proposals"]):
+                raise ValueError("Unknown simplification proposal")
+            # The client supplies a decision only, never editable face references.
+            if set(item) != {"id", "decision"}:
+                raise ValueError("削除対象の面参照は変更できません。接合面は省略できません。")
+            reference = record["proposals"][index-1]["face"]
+            if item["decision"] == "omit" and reference in self.unrendered_faces:
+                raise ValueError("描画できない面は省略判断を保存できません。")
+            record["proposals"][index-1]["decision"] = item["decision"]
+            record["notes"] = request["notes"]
+            record["confirmed"] = False
+            validate_review(record, state["draft"], self.parts)
+            write_json(self.simplification_path, record)
+            return self.state()
+
+    def finish_simplification(self, request):
+        with self.lock:
+            self.check_revision(request, simplification=True)
+            state = self.state()
+            record = deepcopy(state["simplification"])
+            if record is None:
+                raise ValueError("削除提案が未作成または接合面レビュー変更で無効です。")
+            record.update(confirmed=True, notes=request["notes"])
+            validate_review(record, state["draft"], self.parts, require_complete=True)
+            write_json(self.simplification_path, record)
+            return self.state()
 
     def save(self, request):
         with self.lock:
@@ -234,6 +312,12 @@ def handler_for(session, scene):
                 path = urlsplit(self.path).path
                 if path == "/api/save":
                     self.reply(200, session.save(data))
+                elif path == "/api/simplification/start":
+                    self.reply(200, session.start_simplification(data))
+                elif path == "/api/simplification/save":
+                    self.reply(200, session.save_simplification(data))
+                elif path == "/api/simplification/finish":
+                    self.reply(200, session.finish_simplification(data))
                 elif path == "/api/measure":
                     with session.lock:
                         session.ensure_sources()
@@ -251,11 +335,13 @@ def main():
     parser.add_argument("bundle", type=Path)
     parser.add_argument("candidates", type=Path)
     parser.add_argument("review", type=Path)
+    parser.add_argument("--simplification-review", type=Path,
+                        help="Separate face simplification review JSON")
     parser.add_argument("--port", type=int, default=3941)
     parser.add_argument("--no-browser", action="store_true")
     args = parser.parse_args()
     try:
-        session = ReviewSession(args.bundle, args.candidates, args.review)
+        session = ReviewSession(args.bundle, args.candidates, args.review, args.simplification_review)
         print("Preparing BREP face display mapping...", flush=True)
         scene = render_scene(session.parts, session.nodes)
         session.unrendered_faces = scene["unrendered_faces"]
