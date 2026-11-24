@@ -17,6 +17,7 @@ from OCP.TopoDS import TopoDS
 from b2_faces import load_scene, validate_pair, write_json
 from b2_review import open_review, validate_decision
 from b2_simplification import build_proposal, validate_review
+from b2_sets import normalize_plan
 from propose_contacts import measure_contact
 
 
@@ -208,7 +209,7 @@ class ReviewSession:
             if any(reference in group["faces"] for group in record.get("sets", [])):
                 raise ValueError("この面は簡略化セットで判断してください。")
             if item["decision"] == "simplify":
-                raise ValueError("簡略化して残す場合は、名前と作成操作を持つセットを定義してください。")
+                raise ValueError("簡略化して残す場合は名前付きセットを定義してください。")
             if item["decision"] == "omit" and reference in self.unrendered_faces:
                 raise ValueError("描画できない面は省略判断を保存できません。")
             record["proposals"][index-1]["decision"] = item["decision"]
@@ -226,6 +227,8 @@ class ReviewSession:
             if record is None:
                 raise ValueError("接合面レビュー後に簡略化レビューを開始してください。")
             group = deepcopy(request["set"])
+            if group.get("decision") == "simplify":
+                group["approximation"] = normalize_plan(group.get("approximation"))
             group_id = group.get("id")
             groups = record.setdefault("sets", [])
             old = next((g for g in groups if g["id"] == group_id), None)

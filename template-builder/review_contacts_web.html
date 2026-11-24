@@ -51,11 +51,9 @@ nav button[aria-pressed="true"]{background:#dbeafe;border-color:#155eaa;color:#1
 <p class="hint">同じ部品の複数面を一組にできます。接合面は選択できません。他のセットが所有する面は、そのセットから外してから使います。</p>
 <label for="simplify-decision">簡略化の判断</label><select id="simplify-decision"><option value="pending">未確認</option><option value="keep">残す（エッジを参照）</option><option value="simplify">簡略化して残す（面を参照）</option><option value="omit">省略する（エッジを参照しない）</option></select>
 <div id="approximation-panel" hidden>
-<p class="hint">作成順：スケッチ → 押出／切抜き → 必要な勾配・C面・R。詳細な寸法・基準・スケッチ輪郭はB3で定義します。</p>
-<label for="set-extrusion">スケッチ後の操作</label><select id="set-extrusion"><option value="extrude">押出</option><option value="cut">切抜き</option></select>
-<label><input id="set-draft" type="checkbox"> 勾配を付ける</label>
-<label><input id="set-chamfer" type="checkbox"> C面を付ける</label>
-<label><input id="set-fillet" type="checkbox"> Rを付ける</label>
+<label for="set-policy">近似方針（任意）</label><select id="set-policy"><option value="unspecified">未指定・B3で検討</option><option value="preserve_volume">体積をできるだけ維持</option><option value="preserve_envelope">外形範囲をできるだけ維持</option></select>
+<label for="set-policy-notes">近似方針のメモ</label><textarea id="set-policy-notes" maxlength="4000" placeholder="近似時に優先したいこと"></textarea>
+<p class="hint">細かい作成操作は指示しません。C面・Rは省略する方針です。体積維持は目標であり、評価する範囲や許容差は後工程で決めます。接合面と必要な開口は保護します。</p>
 </div>
 <button id="set-delete" disabled>セットを解除して再確認する</button>
 </fieldset>

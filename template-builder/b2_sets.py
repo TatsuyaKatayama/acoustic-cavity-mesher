@@ -17,8 +17,14 @@ from OCP.TopTools import TopTools_IndexedMapOfShape
 
 
 def validate_plan(plan):
+    # Old operation recipes remain readable as history, but are never exported
+    # as construction instructions by normalize_plan().
+    if isinstance(plan, dict) and "operations" not in plan:
+        if set(plan) != {"policy", "notes", "detail_policy"} or plan["policy"] not in ("unspecified", "preserve_volume", "preserve_envelope") or not isinstance(plan["notes"], str) or len(plan["notes"]) > 4000 or plan["detail_policy"] != "omit_chamfers_and_fillets":
+            raise ValueError("近似方針は未指定・体積維持・外形範囲維持から選び、メモを4000文字以内で指定してください。")
+        return
     if not isinstance(plan, dict) or set(plan) != {"operations", "parameter_status"} or plan["parameter_status"] != "define_in_B3":
-        raise ValueError("近似セットにはB3で定義する作成操作が必要です。")
+        raise ValueError("近似セットの方針データが必要です。方針は未指定でも保存できます。")
     steps = plan["operations"]
     if not isinstance(steps, list) or not 2 <= len(steps) <= 5:
         raise ValueError("スケッチと押出または切抜きから操作を定義してください。")
@@ -40,6 +46,14 @@ def validate_plan(plan):
                 raise ValueError("作成操作の寸法・角度が不正です。")
     if names[0] != "sketch" or names[1] not in ("extrude", "cut") or any(n not in ("draft", "chamfer", "fillet") for n in names[2:]) or len(set(names)) != len(names):
         raise ValueError("操作順はスケッチ、押出/切抜き、必要な勾配・C面・Rとしてください。")
+
+
+def normalize_plan(plan):
+    """Discard legacy operation instructions, retaining classification and faces."""
+    validate_plan(plan)
+    if "operations" in plan:
+        return {"policy": "unspecified", "notes": "", "detail_policy": "omit_chamfers_and_fillets"}
+    return deepcopy(plan)
 
 
 def validate_face(ref, parts):
@@ -83,7 +97,7 @@ def validate_sets(record, draft, parts):
         if owner and row["decision"] != owner["decision"]:
             raise ValueError("面の判断と簡略化セットの分類が一致しません。")
         if row["decision"] == "simplify" and owner is None:
-            raise ValueError("簡略化して残す面には、名前と作成操作を持つセットが必要です。")
+            raise ValueError("簡略化して残す面には名前付きセットが必要です。")
     return owners
 
 
@@ -168,7 +182,9 @@ def export_sets(record, draft, parts):
                            "faces": refs, "decision": "keep", "approximation": None})
     result = []
     for group in groups:
-        item = {**group, "reference_policy": {"keep": "edges", "simplify": "surfaces_and_operations", "omit": "ignore"}[group["decision"]]}
+        item = {**group, "reference_policy": {"keep": "edges", "simplify": "surfaces_and_policy", "omit": "ignore"}[group["decision"]]}
+        if group["decision"] == "simplify":
+            item["approximation"] = normalize_plan(group["approximation"])
         item["edge_references"] = edge_references(group["faces"], parts) if group["decision"] == "keep" else []
         item["surface_references"] = [surface_reference(ref, parts) for ref in group["faces"]] if group["decision"] == "simplify" else []
         result.append(item)
