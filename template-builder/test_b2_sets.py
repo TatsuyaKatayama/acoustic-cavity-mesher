@@ -226,10 +226,10 @@ class SimplificationSetTests(unittest.TestCase):
         item = self.add_set(record)
         groups = simplification.handoff_guidance(record, self.draft, self.parts)["sets"]
         group = next(g for g in groups if g["id"] == item["id"])
-        self.assertEqual(group["reference_policy"], "surfaces_and_operations")
+        self.assertEqual(group["reference_policy"], "surfaces_and_policy")
         self.assertEqual(group["edge_references"], [])
         self.assertEqual({tuple(ref["face"]) for ref in group["surface_references"]}, {tuple(ref) for ref in item["faces"]})
-        self.assertEqual(group["approximation"], item["approximation"])
+        self.assertEqual(group["approximation"], {"policy": "unspecified", "notes": "", "detail_policy": "omit_chamfers_and_fillets"})
         for reference in group["surface_references"]:
             self.assertEqual(reference["surface_type"], "planar")
             self.assertEqual(len(reference["origin_mm"]), 3)

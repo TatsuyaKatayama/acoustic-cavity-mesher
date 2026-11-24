@@ -5,7 +5,7 @@ const $ = id => document.getElementById(id);
 const labels = {pending:'未確認',accepted:'採用',rejected:'除外'};
 let state, scene, page, viewer, row=0, current, dirty=false, loading=false, sequence=0, ready=false;
 let phase='contacts', simplifyRow=0, simplifyCurrent;
-let activeSetId=null, loadedSet=null;
+let activeSetId=null;
 const names={}, leaves={};
 function message(text,error=false){$('message').textContent=text;$('message').dataset.error=error;}
 async function api(path,data){
@@ -22,7 +22,7 @@ function controls(){
   $('simplify-decision').disabled=loading||!$('set-members').selectedOptions.length;
   $('simplify-notes').disabled=loading;
   $('simplify-save').disabled=loading||!state?.simplification||!$('set-members').selectedOptions.length;
-  for(const id of ['set-picker','set-part','set-name','set-members','set-extrusion','set-draft','set-chamfer','set-fillet'])$(id).disabled=loading;
+  for(const id of ['set-picker','set-part','set-name','set-members','set-policy','set-policy-notes'])$(id).disabled=loading;
   $('set-delete').disabled=loading||!activeSetId;
   $('approximation-panel').hidden=$('simplify-decision').value!=='simplify';
   const members=Array.from($('set-members').selectedOptions,o=>JSON.parse(o.value));
@@ -140,7 +140,7 @@ $('save').onclick=async()=>{
   }catch(e){message(e.message,true);}finally{loading=false;controls();}
 };
 function loadSetForm(group=null){
-  loadedSet=group?structuredClone(group):null;activeSetId=group?.id||null;
+  activeSetId=group?.id||null;
   const record=state.simplification, groups=record?.sets||[];
   $('set-picker').replaceChildren(new Option('新しいセット',''),...groups.map(g=>new Option(g.name,g.id)));
   $('set-picker').value=activeSetId||'';
@@ -150,9 +150,8 @@ function loadSetForm(group=null){
   $('set-name').value=group?.name||`${names[part]}_セット`;
   fillSetMembers(group?.faces||(simplifyCurrent?[simplifyCurrent.face]:[]));
   $('simplify-decision').value=group?.decision||simplifyCurrent?.decision||'pending';
-  const steps=group?.approximation?.operations||[];
-  $('set-extrusion').value=steps.some(s=>s.operation==='cut')?'cut':'extrude';
-  for(const op of ['draft','chamfer','fillet'])$('set-'+op).checked=steps.some(s=>s.operation===op);
+  $('set-policy').value=group?.approximation?.policy||'unspecified';
+  $('set-policy-notes').value=group?.approximation?.notes||'';
   controls();
 }
 function fillSetMembers(selected=[]){
@@ -166,7 +165,7 @@ function fillSetMembers(selected=[]){
 function loadSimplification(selectedSetId=null){
   const record=state.simplification;
   $('simplify-start-panel').hidden=!!record;$('simplify-review-panel').hidden=!record;
-  if(!record){simplifyCurrent=undefined;activeSetId=null;loadedSet=null;$('set-members').replaceChildren();draw();controls();return;}
+  if(!record){simplifyCurrent=undefined;activeSetId=null;$('set-members').replaceChildren();draw();controls();return;}
   simplifyRow=Math.min(simplifyRow,Math.max(0,record.proposals.length-1));
   const labels={pending:'未確認',keep:'残す',simplify:'簡略化して残す',omit:'省略する'};
   const chosen=(record.sets||[]).find(g=>g.id===selectedSetId);
@@ -208,7 +207,7 @@ $('simplify-start').onclick=async()=>{
   catch(e){message(e.message,true);}finally{loading=false;controls();}
 };
 $('simplify-candidate').onchange=()=>{if(dirty){$('simplify-candidate').value=simplifyRow;message('現在の簡略化判断を保存するか、戻してください。',true);return;}simplifyRow=Number($('simplify-candidate').value);loadSimplification();};
-for(const id of ['simplify-decision','simplify-notes','set-name','set-extrusion','set-draft','set-chamfer','set-fillet'])$(id).addEventListener('input',markDirty);
+for(const id of ['simplify-decision','simplify-notes','set-name','set-policy','set-policy-notes'])$(id).addEventListener('input',markDirty);
 $('set-members').onchange=()=>{markDirty();draw();};
 $('set-picker').onchange=()=>{
   if(dirty){$('set-picker').value=activeSetId||'';message('セットの変更を保存するか、戻してください。',true);return;}
@@ -216,14 +215,13 @@ $('set-picker').onchange=()=>{
   loadSetForm(group);draw();
 };
 $('set-part').onchange=()=>{
-  const part=$('set-part').value;activeSetId=null;loadedSet=null;$('set-picker').value='';$('set-name').value=`${names[part]}_セット`;fillSetMembers();markDirty();draw();
+  const part=$('set-part').value;activeSetId=null;$('set-picker').value='';$('set-name').value=`${names[part]}_セット`;fillSetMembers();markDirty();draw();
 };
 $('simplify-revert').onclick=()=>{loadSimplification();message('保存済みの簡略化判断に戻しました。');};
 $('simplify-save').onclick=async()=>{
   const faces=viewRefs();if(!faces.length)return;
   try{loading=true;controls();const decision=$('simplify-decision').value;
-    const opNames=['sketch',$('set-extrusion').value,...['draft','chamfer','fillet'].filter(op=>$('set-'+op).checked)];
-    const approximation=decision==='simplify'?{operations:opNames.map(operation=>({operation,parameters:loadedSet?.approximation?.operations.find(s=>s.operation===operation)?.parameters||{}})),parameter_status:'define_in_B3'}:null;
+    const approximation=decision==='simplify'?{policy:$('set-policy').value,notes:$('set-policy-notes').value,detail_policy:'omit_chamfers_and_fillets'}:null;
     const group={id:activeSetId,name:$('set-name').value,faces,decision,approximation};
     state=await api('/api/simplification/set/save',{...simplifyRequest(),set:group,notes:$('simplify-notes').value});
     const saved=activeSetId||(state.simplification.sets||[]).at(-1)?.id;loadSimplification(saved);stageStatus();message('簡略化セットを保存しました。');}
