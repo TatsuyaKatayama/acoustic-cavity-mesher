@@ -82,7 +82,7 @@ def build_proposal(parts, draft, threshold_mm=5):
             "candidates_sha256": draft["candidates_sha256"],
             "contact_review_sha256": contact_signature(draft), "threshold_mm": threshold_mm,
             "protected_faces": [list(ref) for ref in sorted(protected)],
-            "default_policy": "preserve", "proposals": proposals, "notes": "", "confirmed": False}
+            "default_policy": "preserve", "proposals": proposals, "sets": [], "notes": "", "confirmed": False}
 
 
 def validate_review(record, draft, parts, require_complete=False):
@@ -100,8 +100,8 @@ def validate_review(record, draft, parts, require_complete=False):
         if not isinstance(actual, dict) or any(actual.get(key) != reference[key] for key in
                                                ("id", "face", "measurement", "reasons")):
             raise ValueError("削除提案の面参照または計測値が変更されています。接合面は省略できません。")
-        if actual.get("decision") not in ("pending", "keep", "omit"):
-            raise ValueError("簡略化の判断は未確認・残す・省略するから選んでください。")
+        if actual.get("decision") not in ("pending", "keep", "simplify", "omit"):
+            raise ValueError("簡略化の判断は未確認・残す・簡略化して残す・省略するから選んでください。")
         if require_complete and actual["decision"] == "pending":
             raise ValueError(f"削除提案 {actual['id']} は未確認です。")
     if not isinstance(record.get("notes"), str) or type(record.get("confirmed")) is not bool:
@@ -110,15 +110,21 @@ def validate_review(record, draft, parts, require_complete=False):
         raise ValueError("未確認の削除提案があるため簡略化レビューは確定できません。")
     if require_complete and not record["confirmed"]:
         raise ValueError("簡略化レビューを確定してください。")
+    from b2_sets import validate_sets
+    validate_sets(record, draft, parts)
     return record
 
 
 def handoff_guidance(record, draft, parts):
     validate_review(record, draft, parts, require_complete=True)
+    from b2_sets import effective_sets, export_sets
+    groups = effective_sets(record)
     return {"protected_contact_faces": record["protected_faces"],
             "threshold_mm": record["threshold_mm"],
-            "omitted_faces": [r["face"] for r in record["proposals"] if r["decision"] == "omit"],
-            "explicitly_preserved_faces": [r["face"] for r in record["proposals"] if r["decision"] == "keep"],
+            "omitted_faces": [ref for g in groups if g["decision"] == "omit" for ref in g["faces"]],
+            "explicitly_preserved_faces": [ref for g in groups if g["decision"] == "keep" for ref in g["faces"]],
+            "simplified_faces": [ref for g in groups if g["decision"] == "simplify" for ref in g["faces"]],
+            "sets": export_sets(record, draft, parts),
             "default_face_policy": "preserve", "notes": record["notes"],
             "contact_review_sha256": record["contact_review_sha256"],
             "rule": "Rebuild a new parametric model. Do not delete faces from detailed CAD. Preserve contact faces and required openings."}

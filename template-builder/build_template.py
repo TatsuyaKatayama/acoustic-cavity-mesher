@@ -24,6 +24,9 @@ def target_contacts(handoff, digest, parts, part_id, mappings):
         raise ValueError("Expected a B3 input file that belongs to this B1 bundle and uses mm")
     if part_id not in parts:
         raise ValueError(f"Unknown target part ID: {part_id}")
+    sets = handoff.get("simplification_guidance", {}).get("face_review", {}).get("sets", [])
+    if any(ref[0] == part_id for group in sets for ref in group["faces"]):
+        raise ValueError("Current mounting_block builder cannot enforce B2 reference sets. Define a set-aware template before B3 construction.")
     requested = {}
     for item in mappings:
         candidate, separator, name = item.partition("=")
