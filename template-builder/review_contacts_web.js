@@ -5,7 +5,14 @@ const $ = id => document.getElementById(id);
 const labels = {pending:'未確認',accepted:'採用',rejected:'除外'};
 let state, scene, page, viewer, row=0, current, dirty=false, loading=false, sequence=0, ready=false;
 let phase='contacts', simplifyRow=0, simplifyCurrent;
-let activeSetId=null;
+let activeSetId=null, facePicking=false, gesture=null, press=null;
+function syncFacePicking(){if(page)page.handleMessage({type:'ui',config:{analysisTool:phase==='simplification'&&facePicking?'select':phase==='contacts'&&$('pick').value!=='off'?'select':'off',shapeFilter:'face'}});}
+function editPickedFace(ref,remove){
+  if((state.simplification?.protected_faces||[]).some(r=>refKey(r)===refKey(ref))){message('接合面は残す面に固定されています。',true);return;}
+  if(ref[0]!==$('set-part').value){message('対象部品の面を選んでください。',true);return;}
+  const option=Array.from($('set-members').options).find(o=>o.value===refKey(ref));
+  if(option&&option.selected!==!remove){option.selected=!remove;markDirty();draw();}
+}
 const names={}, leaves={};
 function message(text,error=false){$('message').textContent=text;$('message').dataset.error=error;}
 async function api(path,data){
@@ -22,7 +29,8 @@ function controls(){
   $('simplify-decision').disabled=loading||!$('set-members').selectedOptions.length;
   $('simplify-notes').disabled=loading;
   $('simplify-save').disabled=loading||!state?.simplification||!$('set-members').selectedOptions.length;
-  for(const id of ['set-picker','set-part','set-name','set-members','set-policy','set-policy-notes'])$(id).disabled=loading;
+  for(const id of ['set-picker','set-part','set-name','set-members','set-policy','set-policy-notes','select-faces','clear-faces'])$(id).disabled=loading;
+  $('set-name').disabled=loading||['keep','omit'].includes($('simplify-decision').value);
   $('set-delete').disabled=loading||!activeSetId;
   $('approximation-panel').hidden=$('simplify-decision').value!=='simplify';
   const members=Array.from($('set-members').selectedOptions,o=>JSON.parse(o.value));
@@ -53,6 +61,13 @@ function draw(){
   const highlighted=new Set(refs.map(refKey));
   const protectedFaces=new Set((state.simplification?.protected_faces||[]).map(refKey));
   const proposals=new Map((state.simplification?.proposals||[]).map(r=>[refKey(r.face),r.decision]));
+  const setColors=new Map();
+  const palette=['#8961c6','#b87925','#488943','#a45591','#397b92'];
+  let approximationIndex=0;
+  for(const group of state.simplification?.sets||[])if(group.decision==='simplify'){
+    const color=palette[approximationIndex++%palette.length];
+    for(const ref of group.faces)setColors.set(refKey(ref),color);
+  }
   for(const group of state.simplification?.sets||[])for(const ref of group.faces)proposals.set(refKey(ref),group.decision);
   let changed=false;
   for(const [path,ref] of Object.entries(scene.face_map)){
@@ -61,8 +76,9 @@ function draw(){
     if(phase==='simplification'){
       if(protectedFaces.has(key))color='#16857b';
       else if(proposals.has(key))color={pending:'#e16a86',keep:'#4a85c4',simplify:'#8961c6',omit:'#d54848'}[proposals.get(key)];
+      if(setColors.has(key)&&!protectedFaces.has(key))color=setColors.get(key);
     }
-    if(highlighted.has(key))color='#ff8c00';
+    if(highlighted.has(key)&&!protectedFaces.has(key))color='#ff8c00';
     if(leaves[path].color!==color){leaves[path].color=color;changed=true;}
   }
   if(changed){
@@ -71,8 +87,9 @@ function draw(){
     page.handleMessage(scene.model);
     viewer.setCameraLocationSettings(camera.position,camera.quaternion,camera.target,camera.zoom,false);
   }
+  syncFacePicking();
   const mode=$('isolate').value;
-  const ids= mode==='all'||!refs.length?null: mode==='pair'||phase==='simplification'?refs.map(f=>f[0]):[refs[mode==='first'?0:1][0]];
+  const ids= mode==='all'?null:phase==='simplification'?[$('set-part').value]:!refs.length?null: mode==='pair'||phase==='simplification'?refs.map(f=>f[0]):[refs[mode==='first'?0:1][0]];
   viewer.setStates(Object.fromEntries(Object.entries(scene.face_map).map(([path,ref])=>[path,!ids||ids.includes(ref[0])?[1,1]:[0,0]])));
   clip();
 }
@@ -91,7 +108,7 @@ function fitVisible(){
   if(!ready)return;
   const refs=viewRefs();
   const mode=$('isolate').value;
-  const ids=mode==='all'||!refs.length?Object.keys(scene.part_bounds):mode==='pair'||phase==='simplification'?refs.map(f=>f[0]):[refs[mode==='first'?0:1][0]];
+  const ids=mode==='all'?Object.keys(scene.part_bounds):phase==='simplification'?[$('set-part').value]:!refs.length?Object.keys(scene.part_bounds):mode==='pair'||phase==='simplification'?refs.map(f=>f[0]):[refs[mode==='first'?0:1][0]];
   const boxes=ids.map(id=>scene.part_bounds[id]);
   const low=[0,1,2].map(i=>Math.min(...boxes.map(b=>b[i]))),high=[0,1,2].map(i=>Math.max(...boxes.map(b=>b[i+3])));
   const target=low.map((v,i)=>(v+high[i])/2),camera=viewer.getCameraLocationSettings();
@@ -111,7 +128,9 @@ function loadRow(){
   if(page)page.handleMessage({type:'ui',config:{analysisTool:'off'}});
 }
 function selected(status){
-  if(phase!=='contacts'||!ready||!current||$('pick').value==='off'||!status.selected)return;
+  if(!ready||!status.selected)return;
+  if(phase==='simplification'&&(!facePicking||!gesture||gesture.consumed))return;
+  if(phase==='contacts'&&(!current||$('pick').value==='off'))return;
   const refs=[];
   for(const [key,ids] of Object.entries(status.selected)){
     // Each rendered leaf is one BREP face. Accept only a Face selection on a
@@ -121,6 +140,7 @@ function selected(status){
     refs.push(scene.face_map[path]);
   }
   if(refs.length!==1)return;
+  if(phase==='simplification'){const remove=gesture.remove;gesture.consumed=true;queueMicrotask(()=>{viewer.clearSelection();editPickedFace(refs[0],remove);});return;}
   const side=Number($('pick').value),ref=refs[0];
   if(ref[0]===current.faces[1-side][0]){message('異なる部品の面を選んでください。',true);return;}
   current.faces[side]=ref;current.decision='pending';current.condition=null;$('decision').value='pending';
@@ -142,7 +162,7 @@ $('save').onclick=async()=>{
 function loadSetForm(group=null){
   activeSetId=group?.id||null;
   const record=state.simplification, groups=record?.sets||[];
-  $('set-picker').replaceChildren(new Option('新しいセット',''),...groups.map(g=>new Option(g.name,g.id)));
+  $('set-picker').replaceChildren(new Option('新しいセット',''),...groups.map(g=>new Option(`${names[g.faces[0][0]]} · ${g.name}`,g.id)));
   $('set-picker').value=activeSetId||'';
   $('set-part').replaceChildren(...Object.keys(scene.part_bounds).map(id=>new Option(`${names[id]} · ${id}`,id)));
   const part=group?.faces[0][0]||simplifyCurrent?.face[0]||Object.keys(scene.part_bounds)[0];
@@ -160,7 +180,7 @@ function fillSetMembers(selected=[]){
   const otherOwners=new Set((record?.sets||[]).filter(g=>g.id!==activeSetId).flatMap(g=>g.faces.map(refKey)));
   const refs=Array.from(new Map(Object.values(scene.face_map).map(ref=>[refKey(ref),ref])).values()).filter(ref=>ref[0]===part&&!protectedFaces.has(refKey(ref))).sort((a,b)=>a[1]-b[1]);
   const selectedKeys=new Set(selected.map(refKey));
-  $('set-members').replaceChildren(...refs.map(ref=>{const o=new Option(`面 ${ref[1]}${otherOwners.has(refKey(ref))?'（他のセット）':''}`,refKey(ref));o.disabled=otherOwners.has(refKey(ref));o.selected=selectedKeys.has(o.value)&&!o.disabled;return o;}));
+  $('set-members').replaceChildren(...refs.map(ref=>{const o=new Option(`面 ${ref[1]}${otherOwners.has(refKey(ref))?'（保存時に移動）':''}`,refKey(ref));o.selected=selectedKeys.has(o.value);return o;}));
 }
 function loadSimplification(selectedSetId=null){
   const record=state.simplification;
@@ -209,6 +229,8 @@ $('simplify-start').onclick=async()=>{
 $('simplify-candidate').onchange=()=>{if(dirty){$('simplify-candidate').value=simplifyRow;message('現在の簡略化判断を保存するか、戻してください。',true);return;}simplifyRow=Number($('simplify-candidate').value);loadSimplification();};
 for(const id of ['simplify-decision','simplify-notes','set-name','set-policy','set-policy-notes'])$(id).addEventListener('input',markDirty);
 $('set-members').onchange=()=>{markDirty();draw();};
+$('select-faces').onclick=()=>{facePicking=!facePicking;$('select-faces').setAttribute('aria-pressed',String(facePicking));syncFacePicking();};
+$('clear-faces').onclick=()=>{for(const option of $('set-members').options)option.selected=false;markDirty();draw();};
 $('set-picker').onchange=()=>{
   if(dirty){$('set-picker').value=activeSetId||'';message('セットの変更を保存するか、戻してください。',true);return;}
   const group=(state.simplification.sets||[]).find(g=>g.id===$('set-picker').value);
@@ -224,7 +246,7 @@ $('simplify-save').onclick=async()=>{
     const approximation=decision==='simplify'?{policy:$('set-policy').value,notes:$('set-policy-notes').value,detail_policy:'omit_chamfers_and_fillets'}:null;
     const group={id:activeSetId,name:$('set-name').value,faces,decision,approximation};
     state=await api('/api/simplification/set/save',{...simplifyRequest(),set:group,notes:$('simplify-notes').value});
-    const saved=activeSetId||(state.simplification.sets||[]).at(-1)?.id;loadSimplification(saved);stageStatus();message('簡略化セットを保存しました。');}
+    const saved=state.saved_set_id;loadSimplification(saved);stageStatus();message('簡略化セットを保存しました。');}
   catch(e){message(e.message,true);}finally{loading=false;controls();}
 };
 $('set-delete').onclick=async()=>{
@@ -243,6 +265,11 @@ try{
   function walk(node){if(node.parts)node.parts.forEach(walk);else{leaves[node.id]=node;}}
   walk(scene.model.data.shapes);
   const container=$('viewport');
+  container.addEventListener('mousedown',event=>{press=event.button===0&&event.target.tagName==='CANVAS'?{x:event.clientX,y:event.clientY}:null;},true);
+  container.addEventListener('mouseup',event=>{
+    gesture=press&&event.button===0&&Math.hypot(event.clientX-press.x,event.clientY-press.y)<=4?{remove:event.shiftKey,consumed:false}:null;
+    press=null;const currentGesture=gesture;setTimeout(()=>{if(gesture===currentGesture)gesture=null;},0);
+  },true);
   class ReviewViewer extends Viewer{constructor(...args){super(...args);viewer=this;}}
   page=createPage({Viewer:ReviewViewer,Display,Timer,container,listen:false,theme:'light',getSize:()=>({width:container.clientWidth,height:container.clientHeight}),overrides:{display:{theme:'light',glass:true,tools:true,treeWidth:200,externalMeasurementBackend:false},viewer:{control:'trackball',up:'Z',tools:true,glass:true}},send:(type,status)=>{if(type==='status')selected(status);}});
   page.handleMessage(scene.model);ready=true;fillList();stageStatus();
