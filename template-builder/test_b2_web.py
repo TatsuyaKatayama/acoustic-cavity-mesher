@@ -21,10 +21,19 @@ from OCP.TopTools import TopTools_IndexedMapOfShape
 
 from b1_step import brep_bytes
 from b2_review import make_handoff
+from b2_simplification import build_proposal
 from review_contacts_web import ReviewSession, handler_for, render_scene
 
 
 IDENTITY = [[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0]]
+
+
+def synthetic_handoff(draft, parts):
+    simplification = build_proposal(parts, draft)
+    for proposal in simplification["proposals"]:
+        proposal["decision"] = "keep"
+    simplification["confirmed"] = True
+    return make_handoff(draft, parts, simplification)
 
 
 class WebReviewTests(unittest.TestCase):
@@ -85,7 +94,7 @@ class WebReviewTests(unittest.TestCase):
         self.assertEqual(row["measurement"]["contact_type"], "planar")
         reopened = ReviewSession(self.bundle, self.candidates, self.review).state()
         self.assertEqual(reopened["draft"], state["draft"])
-        handoff = make_handoff(reopened["draft"], self.session.parts)
+        handoff = synthetic_handoff(reopened["draft"], self.session.parts)
         self.assertEqual([list(f) for f in handoff["contact_constraints"][0]["faces"]], self.corrected_pair)
         self.assertEqual(handoff["contact_constraints"][0]["contact_type"], "planar")
         self.assertAlmostEqual(handoff["contact_constraints"][0]["source_measurement"]["overlap_mm2"], 12)
@@ -94,7 +103,7 @@ class WebReviewTests(unittest.TestCase):
         state = self.session.save(self.accepted(self.corrected_pair))
         draft = deepcopy(state["draft"])
         draft["reviews"][0]["measurement"] = {"contact_type": "cylindrical", "overlap_mm2": 1000000, "gap_mm": 999}
-        constraint = make_handoff(draft, self.session.parts)["contact_constraints"][0]
+        constraint = synthetic_handoff(draft, self.session.parts)["contact_constraints"][0]
         self.assertEqual(constraint["contact_type"], "planar")
         self.assertAlmostEqual(constraint["source_measurement"]["overlap_mm2"], 12)
 
@@ -110,7 +119,7 @@ class WebReviewTests(unittest.TestCase):
         draft = deepcopy(self.session.state()["draft"])
         draft["reviews"][0].update(faces=[["outer", 1], ["inner", 1]], decision="accepted",
             condition={"mode": "keep_gap", "target_gap_mm": .05, "tolerance_mm": .01})
-        constraint = make_handoff(draft, parts)["contact_constraints"][0]
+        constraint = synthetic_handoff(draft, parts)["contact_constraints"][0]
         self.assertEqual(constraint["contact_type"], "cylindrical")
         self.assertAlmostEqual(constraint["source_measurement"]["gap_mm"], .05)
         self.assertAlmostEqual(constraint["source_measurement"]["overlap_mm2"], 100 * math.pi)

@@ -57,7 +57,7 @@ def validate_decision(item, parts):
     return pair
 
 
-def make_handoff(draft, parts):
+def make_handoff(draft, parts, simplification=None):
     constraints = []
     used_pairs = set()
     for item in draft["reviews"]:
@@ -80,6 +80,8 @@ def make_handoff(draft, parts):
             "contact_type": measurement["contact_type"],
             "source_measurement": measurement,
         })
+    from b2_simplification import handoff_guidance
+    face_review = handoff_guidance(simplification, draft, parts)
     return {
         "schema_version": 1,
         "manifest_sha256": draft["manifest_sha256"],
@@ -87,9 +89,10 @@ def make_handoff(draft, parts):
         "length_unit": "mm",
         "simplification_guidance": {
             "typical_part_dimension_mm": [5, 200],
-            "small_feature_review_threshold_mm": 5,
+            "small_feature_review_threshold_mm": simplification["threshold_mm"],
             "rule": "Consider omitting features at or below the threshold. Preserve required features regardless of size.",
             "notes": draft["simplification_notes"],
+            "face_review": face_review,
         },
         "contact_constraints": constraints,
     }
