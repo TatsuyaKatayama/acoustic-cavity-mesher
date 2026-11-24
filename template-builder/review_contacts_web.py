@@ -7,6 +7,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 from pathlib import Path
 import secrets
+from uuid import uuid4
 from threading import Lock
 from urllib.parse import urlsplit
 import webbrowser
@@ -204,10 +205,62 @@ class ReviewSession:
             if set(item) != {"id", "decision"}:
                 raise ValueError("削除対象の面参照は変更できません。接合面は省略できません。")
             reference = record["proposals"][index-1]["face"]
+            if any(reference in group["faces"] for group in record.get("sets", [])):
+                raise ValueError("この面は簡略化セットで判断してください。")
+            if item["decision"] == "simplify":
+                raise ValueError("簡略化して残す場合は、名前と作成操作を持つセットを定義してください。")
             if item["decision"] == "omit" and reference in self.unrendered_faces:
                 raise ValueError("描画できない面は省略判断を保存できません。")
             record["proposals"][index-1]["decision"] = item["decision"]
             record["notes"] = request["notes"]
+            record["confirmed"] = False
+            validate_review(record, state["draft"], self.parts)
+            write_json(self.simplification_path, record)
+            return self.state()
+
+    def save_simplification_set(self, request):
+        with self.lock:
+            self.check_revision(request, simplification=True)
+            state = self.state()
+            record = deepcopy(state["simplification"])
+            if record is None:
+                raise ValueError("接合面レビュー後に簡略化レビューを開始してください。")
+            group = deepcopy(request["set"])
+            group_id = group.get("id")
+            groups = record.setdefault("sets", [])
+            old = next((g for g in groups if g["id"] == group_id), None)
+            if group_id is None:
+                group["id"] = "set-"+uuid4().hex[:16]
+            elif old is None:
+                raise ValueError("Unknown simplification set")
+            # Removing faces from a set requires those auto proposals to be reviewed again.
+            for row in record["proposals"]:
+                if old and row["face"] in old["faces"]:
+                    row["decision"] = "pending"
+                if row["face"] in group.get("faces", []):
+                    row["decision"] = group.get("decision")
+            record["sets"] = [g for g in groups if g["id"] != group_id]+[group]
+            record.update(notes=request["notes"], confirmed=False)
+            validate_review(record, state["draft"], self.parts)
+            if group["decision"] in ("omit", "simplify") and any(ref in self.unrendered_faces for ref in group["faces"]):
+                raise ValueError("描画できない面を含むセットは省略・近似の判断を保存できません。")
+            write_json(self.simplification_path, record)
+            return self.state()
+
+    def delete_simplification_set(self, request):
+        with self.lock:
+            self.check_revision(request, simplification=True)
+            state = self.state()
+            record = deepcopy(state["simplification"])
+            if record is None:
+                raise ValueError("簡略化レビューが必要です。")
+            group = next((g for g in record.get("sets", []) if g["id"] == request["id"]), None)
+            if group is None:
+                raise ValueError("Unknown simplification set")
+            record["sets"].remove(group)
+            for row in record["proposals"]:
+                if row["face"] in group["faces"]:
+                    row["decision"] = "pending"
             record["confirmed"] = False
             validate_review(record, state["draft"], self.parts)
             write_json(self.simplification_path, record)
@@ -318,6 +371,10 @@ def handler_for(session, scene):
                     self.reply(200, session.save_simplification(data))
                 elif path == "/api/simplification/finish":
                     self.reply(200, session.finish_simplification(data))
+                elif path == "/api/simplification/set/save":
+                    self.reply(200, session.save_simplification_set(data))
+                elif path == "/api/simplification/set/delete":
+                    self.reply(200, session.delete_simplification_set(data))
                 elif path == "/api/measure":
                     with session.lock:
                         session.ensure_sources()

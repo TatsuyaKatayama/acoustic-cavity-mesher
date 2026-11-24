@@ -42,14 +42,30 @@ nav button[aria-pressed="true"]{background:#dbeafe;border-color:#155eaa;color:#1
 <label for="simplify-candidate">削除提案の面</label><select id="simplify-candidate"></select>
 <div id="simplify-metrics" class="metric"></div>
 <p id="simplify-refs" class="hint"></p>
-<label for="simplify-decision">簡略化の判断</label><select id="simplify-decision"><option value="pending">未確認</option><option value="keep">残す</option><option value="omit">簡易モデルで省略する</option></select>
+<fieldset><legend>簡略化セット</legend>
+<label for="set-picker">保存済みセット</label><select id="set-picker"><option value="">新しいセット</option></select>
+<label for="set-part">対象部品</label><select id="set-part"></select>
+<label for="set-name">セット名</label><input id="set-name" type="text" maxlength="100" style="width:100%">
+<label for="set-members">対象面（Ctrlで複数選択）</label><select id="set-members" multiple size="6"></select>
+<p id="set-summary" class="hint"></p>
+<p class="hint">同じ部品の複数面を一組にできます。接合面は選択できません。他のセットが所有する面は、そのセットから外してから使います。</p>
+<label for="simplify-decision">簡略化の判断</label><select id="simplify-decision"><option value="pending">未確認</option><option value="keep">残す（エッジを参照）</option><option value="simplify">簡略化して残す（面を参照）</option><option value="omit">省略する（エッジを参照しない）</option></select>
+<div id="approximation-panel" hidden>
+<p class="hint">作成順：スケッチ → 押出／切抜き → 必要な勾配・C面・R。詳細な寸法・基準・スケッチ輪郭はB3で定義します。</p>
+<label for="set-extrusion">スケッチ後の操作</label><select id="set-extrusion"><option value="extrude">押出</option><option value="cut">切抜き</option></select>
+<label><input id="set-draft" type="checkbox"> 勾配を付ける</label>
+<label><input id="set-chamfer" type="checkbox"> C面を付ける</label>
+<label><input id="set-fillet" type="checkbox"> Rを付ける</label>
+</div>
+<button id="set-delete" disabled>セットを解除して再確認する</button>
+</fieldset>
 <label for="simplify-notes">簡略化レビューのメモ</label><textarea id="simplify-notes" placeholder="必要な開口・内壁、まとめて扱う形状、例外など"></textarea>
-<button id="simplify-save">簡略化の判断を保存</button>
+<button id="simplify-save">簡略化セットを保存</button>
 <button id="simplify-revert">未保存の簡略化判断を戻す</button>
 <button id="simplify-finish">簡略化レビューを確定</button>
 </div>
-<p class="hint">緑：保護する接合面　桃：未確認の削除提案　青：残す　赤：省略する　橙：選択中の面</p>
-<p class="hint">提案されない面は残す扱いです。接合面には省略の選択肢を設けません。</p>
+<p class="hint">緑：保護する接合面　桃：未確認　青：残す　紫：簡略化して残す　赤：省略する　橙：選択中のセット</p>
+<p class="hint">未分類の面は残す扱いでエッジを参照できます。省略面と共有するエッジも、残す面の輪郭なら残す側の参照として利用します。</p>
 </section>
 <p id="message" role="status" aria-live="polite"></p>
 <p class="hint">片側表示・断面で隠れた面を確認できます。接合面の変更後は簡略化レビューを再確認します。B3向け出力は両レビューの完了後に専用CLIで行います。</p>
