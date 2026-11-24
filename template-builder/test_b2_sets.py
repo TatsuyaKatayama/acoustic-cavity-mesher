@@ -72,8 +72,8 @@ class SimplificationSetTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             simplification.validate_review(record, self.draft, self.parts, require_complete=True)
 
-    def test_accepted_contact_cannot_enter_any_set(self):
-        for decision in ("keep", "simplify", "omit"):
+    def test_accepted_contact_cannot_enter_approximation_or_omission_set(self):
+        for decision in ("simplify", "omit"):
             with self.subTest(decision=decision):
                 record = self.record()
                 self.add_set(record, faces=[self.draft["reviews"][0]["faces"][0]], decision=decision)
@@ -206,9 +206,9 @@ class SimplificationSetTests(unittest.TestCase):
     def test_keep_export_uses_independently_indexed_edges_and_lengths(self):
         record = self.record()
         item = self.add_set(record, decision="keep")
-        expected, indexed = self.expected_edges(item["faces"])
         exported = simplification.handoff_guidance(record, self.draft, self.parts)["sets"]
-        group = next(g for g in exported if g["id"] == item["id"])
+        group = next(g for g in exported if g["decision"] == "keep" and item["faces"][0] in g["faces"])
+        expected, indexed = self.expected_edges(group["faces"])
         self.assertEqual(group["reference_policy"], "edges")
         self.assertEqual({tuple(e["edge"]) for e in group["edge_references"]}, expected)
         self.assertEqual(len(group["edge_references"]), len(expected))
@@ -218,7 +218,7 @@ class SimplificationSetTests(unittest.TestCase):
             BRepGProp.LinearProperties_s(TopoDS.Edge_s(indexed.FindKey(edge["edge"][1])), props)
             self.assertAlmostEqual(edge["length_mm"], props.Mass(), places=8)
             self.assertTrue(edge["source_faces"])
-            self.assertTrue(all(ref in item["faces"] for ref in edge["source_faces"]))
+            self.assertTrue(all(ref in group["faces"] for ref in edge["source_faces"]))
             self.assertTrue(all(-2.000001 <= xyz[2] <= .000001 for xyz in edge["endpoints_mm"]))
 
     def test_simplify_export_has_surface_geometry_and_ordered_plan_only(self):
@@ -241,7 +241,7 @@ class SimplificationSetTests(unittest.TestCase):
         faces = [["1/3", i] for i in range(1, self.parts["1/3"][1].Extent()+1)]
         item = self.add_set(record, identifier="omit-part", faces=faces, decision="omit")
         groups = simplification.handoff_guidance(record, self.draft, self.parts)["sets"]
-        omitted = next(g for g in groups if g["id"] == item["id"])
+        omitted = next(g for g in groups if g["decision"] == "omit" and item["faces"][0] in g["faces"])
         self.assertEqual(omitted["reference_policy"], "ignore")
         self.assertEqual(omitted["edge_references"], [])
         self.assertEqual(omitted["surface_references"], [])
@@ -256,9 +256,9 @@ class SimplificationSetTests(unittest.TestCase):
         shared = expected & omitted_edges
         self.assertTrue(shared)
         groups = simplification.handoff_guidance(record, self.draft, self.parts)["sets"]
-        kept = next(g for g in groups if g["id"] == keep["id"])
+        kept = next(g for g in groups if g["decision"] == "keep" and keep["faces"][0] in g["faces"])
         self.assertTrue(shared <= {tuple(e["edge"]) for e in kept["edge_references"]})
-        self.assertEqual(next(g for g in groups if g["id"] == omit["id"])["edge_references"], [])
+        self.assertEqual(next(g for g in groups if g["decision"] == "omit" and omit["faces"][0] in g["faces"])["edge_references"], [])
 
     def test_cylindrical_surface_and_circle_edges_keep_absolute_coordinates(self):
         shape = cq.Solid.makeCylinder(2, 6, cq.Vector(20, 3, -4), cq.Vector(0, 1, 0)).wrapped
@@ -332,15 +332,16 @@ class SimplificationSetTests(unittest.TestCase):
         session = self.fixture.session
         state = session.start_simplification(self.start_request())
         state = session.save_simplification_set(self.set_request(state))
-        self.assertEqual(len(state["simplification"]["sets"]), 1)
-        item = state["simplification"]["sets"][0]
+        approximate = [g for g in state["simplification"]["sets"] if g["decision"] == "simplify"]
+        self.assertEqual(len(approximate), 1)
+        item = approximate[0]
         self.assertEqual(item["decision"], "simplify")
         self.assertFalse(state["simplification"]["confirmed"])
         reopened = web_fixture.ReviewSession(session.bundle, session.candidate_path, session.review_path).state()
         self.assertEqual(reopened["simplification"], state["simplification"])
         request = {"revision": state["revision"], "simplification_revision": state["simplification_revision"], "id": item["id"]}
         state = session.delete_simplification_set(request)
-        self.assertEqual(state["simplification"]["sets"], [])
+        self.assertFalse(any(g["decision"] == "simplify" for g in state["simplification"]["sets"]))
         self.assertTrue(all(row["decision"] == "pending" for row in state["simplification"]["proposals"] if row["face"] in item["faces"]))
 
     def test_web_stale_set_save_conflict_does_not_write(self):
@@ -357,11 +358,11 @@ class SimplificationSetTests(unittest.TestCase):
         session = self.fixture.session
         state = session.start_simplification(self.start_request())
         state = session.save_simplification_set(self.set_request(state))
-        group = state["simplification"]["sets"][0]
+        group = next(g for g in state["simplification"]["sets"] if g["decision"] == "simplify")
         retained = group["faces"][:1]
         removed = group["faces"][1:]
         state = session.save_simplification_set(self.set_request(state, identifier=group["id"], faces=retained))
-        self.assertEqual(len(state["simplification"]["sets"]), 1)
+        self.assertEqual(len([g for g in state["simplification"]["sets"] if g["decision"] == "simplify"]), 1)
         self.assertTrue(all(row["decision"] == "pending" for row in state["simplification"]["proposals"] if row["face"] in removed))
         self.assertTrue(all(row["decision"] == "simplify" for row in state["simplification"]["proposals"] if row["face"] in retained))
 
@@ -369,7 +370,7 @@ class SimplificationSetTests(unittest.TestCase):
         session = self.fixture.session
         state = session.start_simplification(self.start_request())
         state = session.save_simplification_set(self.set_request(state))
-        member = state["simplification"]["sets"][0]["faces"][0]
+        member = next(g for g in state["simplification"]["sets"] if g["decision"] == "simplify")["faces"][0]
         row = next(r for r in state["simplification"]["proposals"] if r["face"] == member)
         request = {"revision": state["revision"], "simplification_revision": state["simplification_revision"],
                    "item": {"id": row["id"], "decision": "omit"}, "notes": "must refuse"}

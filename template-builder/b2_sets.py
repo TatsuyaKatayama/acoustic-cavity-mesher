@@ -62,13 +62,38 @@ def validate_face(ref, parts):
     return tuple(ref)
 
 
+def canonicalize_sets(record):
+    """Pure migration: one keep/omit owner per part; approximation groups stay."""
+    result = deepcopy(record)
+    groups = effective_sets(record)
+    merged = {}
+    retained = []
+    for group in groups:
+        if group['decision'] == 'simplify':
+            retained.append(group)
+            continue
+        for ref in group['faces']:
+            key = (ref[0], group['decision'])
+            merged.setdefault(key, []).append(ref)
+    for ref in record.get('protected_faces', []):
+        merged.setdefault((ref[0], 'keep'), []).append(ref)
+    for (part, decision), refs in sorted(merged.items()):
+        retained.append({'id': decision+'-'+part.replace('/', '_'),
+            'name': '残す' if decision == 'keep' else '省略する',
+            'faces': [list(ref) for ref in sorted(set(map(tuple, refs)))],
+            'decision': decision, 'approximation': None})
+    result['sets'] = retained
+    result['set_layout'] = 'single_keep_omit_per_part'
+    return result
+
+
 def validate_sets(record, draft, parts):
     from b2_simplification import protected_faces
     protected = protected_faces(draft, parts)
     sets = record.get("sets", [])
     if not isinstance(sets, list):
         raise ValueError("Invalid simplification sets")
-    ids, owners = set(), {}
+    ids, owners, classes = set(), {}, set()
     for group in sets:
         if not isinstance(group, dict) or set(group) != {"id", "name", "faces", "decision", "approximation"}:
             raise ValueError("Invalid simplification set record")
@@ -82,8 +107,13 @@ def validate_sets(record, draft, parts):
         members = [validate_face(ref, parts) for ref in group["faces"]]
         if len({p for p, _ in members}) != 1:
             raise ValueError("簡略化セットは同じ部品の面で定義してください。")
+        key = (members[0][0], group['decision'])
+        if record.get('set_layout') == 'single_keep_omit_per_part' and group['decision'] in ('keep', 'omit'):
+            if key in classes:
+                raise ValueError('残す・省略するセットは部品ごとに各1組です。')
+            classes.add(key)
         for ref in members:
-            if ref in protected:
+            if ref in protected and group['decision'] != 'keep':
                 raise ValueError("接合面は保護されています。簡略化セットに変更できません。")
             if ref in owners:
                 raise ValueError("同じ面を複数セットで所有することはできません。")
@@ -172,14 +202,18 @@ def edge_references(refs, parts):
 def export_sets(record, draft, parts):
     from b2_simplification import validate_review
     validate_review(record, draft, parts, require_complete=True)
-    groups = effective_sets(record)
+    groups = canonicalize_sets(record)['sets']
     owned = {tuple(ref) for group in groups for ref in group["faces"]}
     # Every unclassified face is still preserved; its edges remain usable.
     for part_id, (_, faces) in parts.items():
         refs = [[part_id, i] for i in range(1, faces.Extent()+1) if (part_id, i) not in owned]
         if refs:
-            groups.append({"id": "implicit-default-"+part_id.replace("/", "_"), "name": "既定で残す面",
-                           "faces": refs, "decision": "keep", "approximation": None})
+            existing = next((g for g in groups if g['decision'] == 'keep' and g['faces'][0][0] == part_id), None)
+            if existing:
+                existing['faces'].extend(refs)
+            else:
+                groups.append({"id": "keep-"+part_id.replace("/", "_"), "name": "残す",
+                               "faces": refs, "decision": "keep", "approximation": None})
     result = []
     for group in groups:
         item = {**group, "reference_policy": {"keep": "edges", "simplify": "surfaces_and_policy", "omit": "ignore"}[group["decision"]]}

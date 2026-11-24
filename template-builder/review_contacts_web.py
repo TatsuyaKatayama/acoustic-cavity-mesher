@@ -17,7 +17,7 @@ from OCP.TopoDS import TopoDS
 from b2_faces import load_scene, validate_pair, write_json
 from b2_review import open_review, validate_decision
 from b2_simplification import build_proposal, validate_review
-from b2_sets import normalize_plan
+from b2_sets import normalize_plan, canonicalize_sets
 from propose_contacts import measure_contact
 
 
@@ -154,6 +154,7 @@ class ReviewSession:
             try:
                 simplification = json.loads(self.simplification_path.read_text(encoding="utf-8"))
                 validate_review(simplification, draft, self.parts)
+                simplification = canonicalize_sets(simplification)
                 status = "confirmed" if simplification["confirmed"] else "reviewing"
             except (ValueError, KeyError, TypeError) as exc:
                 status, error = ("stale" if complete else "locked"), str(exc)
@@ -206,15 +207,21 @@ class ReviewSession:
             if set(item) != {"id", "decision"}:
                 raise ValueError("削除対象の面参照は変更できません。接合面は省略できません。")
             reference = record["proposals"][index-1]["face"]
-            if any(reference in group["faces"] for group in record.get("sets", [])):
+            owner = next((g for g in record.get('sets', []) if reference in g['faces']), None)
+            if owner and owner['decision'] == 'simplify':
                 raise ValueError("この面は簡略化セットで判断してください。")
             if item["decision"] == "simplify":
                 raise ValueError("簡略化して残す場合は名前付きセットを定義してください。")
             if item["decision"] == "omit" and reference in self.unrendered_faces:
                 raise ValueError("描画できない面は省略判断を保存できません。")
+            if owner:
+                owner['faces'].remove(reference)
+                if not owner['faces']:
+                    record['sets'].remove(owner)
             record["proposals"][index-1]["decision"] = item["decision"]
             record["notes"] = request["notes"]
             record["confirmed"] = False
+            record = canonicalize_sets(record)
             validate_review(record, state["draft"], self.parts)
             write_json(self.simplification_path, record)
             return self.state()
@@ -236,19 +243,45 @@ class ReviewSession:
                 group["id"] = "set-"+uuid4().hex[:16]
             elif old is None:
                 raise ValueError("Unknown simplification set")
-            # Removing faces from a set requires those auto proposals to be reviewed again.
+            # Validate the requested ownership before any transfer or persistence.
+            candidate = deepcopy(record)
+            candidate['confirmed'] = False
+            candidate['sets'] = [group]
+            candidate.pop('set_layout', None)
+            for row in candidate['proposals']:
+                row['decision'] = group['decision'] if row['face'] in group.get('faces', []) else 'pending'
+            validate_review(candidate, state['draft'], self.parts)
+            decision = group['decision']
+            part = group['faces'][0][0]
+            destination = next((g for g in groups if g['decision'] == decision and g['faces'][0][0] == part), None) if decision in ('keep', 'omit') else None
+            if destination and destination['id'] != group_id:
+                group['faces'] = list(map(list, sorted(set(map(tuple, group['faces']+destination['faces'])))))
+            if decision in ('keep', 'omit'):
+                group['id'] = decision+'-'+part.replace('/', '_')
+                group['name'] = '残す' if decision == 'keep' else '省略する'
+            if decision == 'keep':
+                group['faces'] = list(map(list, sorted(set(map(tuple, group['faces']+[r for r in record['protected_faces'] if r[0] == part])))))
+            # Transfer selected faces atomically; preserve all other source members.
+            remaining = []
+            for previous in groups:
+                if previous['id'] in (group_id, group['id']):
+                    continue
+                previous['faces'] = [ref for ref in previous['faces'] if ref not in group['faces']]
+                if previous['faces']:
+                    remaining.append(previous)
             for row in record["proposals"]:
                 if old and row["face"] in old["faces"]:
                     row["decision"] = "pending"
                 if row["face"] in group.get("faces", []):
                     row["decision"] = group.get("decision")
-            record["sets"] = [g for g in groups if g["id"] != group_id]+[group]
+            record["sets"] = remaining+[group]
+            record = canonicalize_sets(record)
             record.update(notes=request["notes"], confirmed=False)
             validate_review(record, state["draft"], self.parts)
             if group["decision"] in ("omit", "simplify") and any(ref in self.unrendered_faces for ref in group["faces"]):
                 raise ValueError("描画できない面を含むセットは省略・近似の判断を保存できません。")
             write_json(self.simplification_path, record)
-            return self.state()
+            return {**self.state(), 'saved_set_id': group['id']}
 
     def delete_simplification_set(self, request):
         with self.lock:
@@ -261,6 +294,9 @@ class ReviewSession:
             if group is None:
                 raise ValueError("Unknown simplification set")
             record["sets"].remove(group)
+            protected = [ref for ref in group['faces'] if ref in record['protected_faces']]
+            if protected:
+                record['sets'].append({**group, 'faces': protected})
             for row in record["proposals"]:
                 if row["face"] in group["faces"]:
                     row["decision"] = "pending"
