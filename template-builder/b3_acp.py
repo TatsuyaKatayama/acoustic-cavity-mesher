@@ -243,6 +243,8 @@ def _snapshot(directory):
 
 
 def _turn(config, role, cwd, prompt, transcript, timeout):
+    from agent_roles import B3_ROLES, load_role
+    prompt = load_role(B3_ROLES[role]) + "\n\n" + prompt
     with ACPClient(config['roles'][role]['argv'], cwd, timeout=timeout) as client:
         try:
             initialization = client.initialize()
@@ -316,13 +318,6 @@ def run_workflow(task_path, config, output, *, timeout=300):
             'Allowed measured surface references:\n'+json.dumps(references,ensure_ascii=False)+
             '\nWhole-part policy comparison data (for policy evaluation only, never derive construction dimensions from omitted geometry):\n'+
             json.dumps(policy_context,ensure_ascii=False))
-        simplification_goal = (
-            '\nMinimize unnecessary faces, edges and features. Prefer continuous boundaries '
-            'and extend retained surface regions, using draft where the retained geometry requires it. '
-            'Apply declared volume tolerance as a constraint. Explain any step you cannot remove. '
-            'Before considering the result ready, compare source/result face and edge counts, '
-            'same-view appearance and relevant sections. Disclose checks you could not perform.\n')
-        worker_instructions += simplification_goal
         specialized = config.get('builder',{}).get('kind') == 'fh_casting_trial'
         if specialized:
             import fh_template
@@ -344,7 +339,6 @@ def run_workflow(task_path, config, output, *, timeout=300):
                 'Initial dimensional proposal:\n'+json.dumps(baseline,ensure_ascii=False)+
                 '\nAllowed measured source surface references:\n'+json.dumps(references,ensure_ascii=False)+
                 '\nPolicy comparison data only:\n'+json.dumps(policy_context,ensure_ascii=False))
-            worker_instructions += simplification_goal
         worker = _turn(config, 'worker', output, worker_instructions, transcript, timeout)
         missing_result = ('parameters' not in worker or worker.get('template_id') != 'fh_casting_trial') if specialized else 'plan' not in worker
         if missing_result:

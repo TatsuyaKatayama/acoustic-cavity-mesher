@@ -373,3 +373,15 @@ B3では不要な面・エッジ・フィーチャーを減らす。保持面の
 - `b6_create_candidate.py task artifact output --b3-report ... --b4-report ... --contact-report ... --space-report ... --space ...`：全証拠を束ねるB6候補。NGも隠さず保持し、`registered: false`、人の最終承認待ちとして保存する。既存の正式登録CLIの合格条件を緩めない。
 
 試行用の閾値と承認待ちはレポートに記録する。B4やB5がNGでも調査・比較用の成果物は作れるが、正式登録や本番解析への合格を意味しない。
+
+### Role definitions and shared skills
+
+The role definitions live in `agents/<role>/AGENT.md`. Each `Skill: name` line
+loads `skills/<name>/SKILL.md` from the shared store. B3 assignment files and
+ACP prompts use the same loader. The formal B4 skill belongs to the B4 checker.
+
+To give the independent B4 checker its instructions, run
+`.venv/Scripts/python.exe agent_roles.py b4-checker` from this directory and
+pass the output with the task and artifact paths. The numerical CLI
+`b4_check_rebuild.py` remains a direct-difference measurement tool. The checker
+follows the skill for fallbacks and visual judgment when preparing its final report.

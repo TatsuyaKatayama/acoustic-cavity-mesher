@@ -30,3 +30,8 @@ Preserve the inputs. Save a separate report naming the candidate and evidence.
    Report what is visible and what remains uncertain. Record a separate visual
    judgment. A pass on the numerical criterion alone does not complete B4.
    Report the two B4 judgments and stop before B5.
+
+Record the selected method and the attempts that failed. Sum per-solid volumes
+rather than relying on a single compound measurement when they disagree.
+Report the 5% numerical judgment and the visual judgment separately. If only
+some sections could be inspected, identify them and report the remaining scope.
