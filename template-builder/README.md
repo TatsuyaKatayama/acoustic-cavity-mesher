@@ -383,5 +383,6 @@ ACP prompts use the same loader. The formal B4 skill belongs to the B4 checker.
 To give the independent B4 checker its instructions, run
 `.venv/Scripts/python.exe agent_roles.py b4-checker` from this directory and
 pass the output with the task and artifact paths. The numerical CLI
-`b4_check_rebuild.py` remains a direct-difference measurement tool. The checker
-follows the skill for fallbacks and visual judgment when preparing its final report.
+`b4_check_rebuild.py` uses the three measurement methods in order and the 5% criterion by default.
+An explicit --max-error-mm3 retains the legacy direct-only mode. The checker
+reviews the recorded measurement and makes a separate visual judgment.

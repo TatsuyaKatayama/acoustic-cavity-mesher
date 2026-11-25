@@ -5,11 +5,15 @@ import json
 from math import isfinite
 from pathlib import Path
 
-from OCP.BRepAlgoAPI import BRepAlgoAPI_Cut
+from OCP.BRepAlgoAPI import BRepAlgoAPI_Cut, BRepAlgoAPI_Common
+from OCP.BRepBuilderAPI import BRepBuilderAPI_Transform
+from OCP.gp import gp_Pnt, gp_Trsf
+from OCP.TopAbs import TopAbs_SOLID
+from OCP.TopTools import TopTools_ListOfShape
 from OCP.BRepCheck import BRepCheck_Analyzer
 
 from b2_faces import load_parts
-from b3_check import check_task, check_geometry, read_brep, measure, checked_path
+from b3_check import check_task, check_geometry, read_brep, measure, checked_path, indexed
 from b3_task import load_task
 from propose_contacts import bounds
 
@@ -25,19 +29,77 @@ class MeasurementError(ValueError):
 
 
 def solid_difference(first, second):
-    difference = BRepAlgoAPI_Cut(first, second)
+    return boolean_volume(BRepAlgoAPI_Cut, first, second)
+
+
+def boolean_volume(operation, first, second):
+    difference = operation()
+    arguments, tools = TopTools_ListOfShape(), TopTools_ListOfShape()
+    arguments.Append(first)
+    tools.Append(second)
+    difference.SetArguments(arguments)
+    difference.SetTools(tools)
     difference.SetNonDestructive(True)
     difference.Build()
     if not difference.IsDone():
         raise MeasurementError('B4 solid difference operation IsDone=False')
     if not BRepCheck_Analyzer(difference.Shape()).IsValid():
         raise MeasurementError('B4 solid difference produced an invalid result')
-    return measure(difference.Shape(), True)
+    solids = indexed(difference.Shape(), TopAbs_SOLID)
+    return sum(measure(solids.FindKey(i), True) for i in range(1, solids.Extent()+1))
 
 
-def compare_rebuild(task, source, generated, plan, *, max_error_mm3, max_bbox_difference_mm=None):
+def measure_with_fallback(source, generated, source_volume, generated_volume, tolerance, datum):
+    attempts = []
+    direct = {}
+    for label, first, second in (
+        ('added', source, generated), ('removed', generated, source)
+    ):
+        try:
+            direct[label] = solid_difference(first, second)
+        except MeasurementError as error:
+            direct[label+'_failure'] = str(error)
+    both = 'added' in direct and 'removed' in direct
+    balanced = both and abs(direct['added']-direct['removed']-source_volume+generated_volume) <= tolerance
+    attempts.append({'method': 1, 'usable': balanced, **direct})
+    if balanced:
+        return direct['added'], direct['removed'], attempts
+    try:
+        common = boolean_volume(BRepAlgoAPI_Common, source, generated)
+        added, removed = source_volume-common, generated_volume-common
+        if min(added, removed) < 0:
+            raise MeasurementError('Common volume exceeds an operand volume')
+        attempts.append({'method': 2, 'usable': True, 'common_mm3': common,
+            'balance_is_identity': True,
+            'difference_from_direct_mm3': {
+                key: value-direct[key] for key, value in [('added', added), ('removed', removed)] if key in direct
+            }})
+        return added, removed, attempts
+    except MeasurementError as error:
+        attempts.append({'method': 2, 'usable': False, 'failure': str(error)})
+    try:
+        transform = gp_Trsf()
+        transform.SetScale(gp_Pnt(*datum), 1.00001)
+        scaled = BRepBuilderAPI_Transform(generated, transform, True).Shape()
+        added = solid_difference(source, scaled)
+        removed = solid_difference(scaled, source)
+        scaled_volume = measure(scaled, True)
+        residual = abs(added-removed-source_volume+scaled_volume)
+        if residual > tolerance:
+            raise MeasurementError(f'Scaled difference volume balance residual: {residual} mm3')
+        attempts.append({'method': 3, 'usable': True, 'approximate': True,
+                         'scale': 1.00001, 'datum_mm': datum, 'scaled_volume_mm3': scaled_volume})
+        return added, removed, attempts
+    except MeasurementError as error:
+        attempts.append({'method': 3, 'usable': False, 'failure': str(error)})
+        return None, None, attempts
+
+
+def compare_rebuild(task, source, generated, plan, *, max_error_mm3=None, max_bbox_difference_mm=None):
     """Separate fit reachability from whether the produced geometry is sufficient."""
-    max_error_mm3 = positive_limit(max_error_mm3, 'max_error_mm3')
+    use_fallback = max_error_mm3 is None
+    if not use_fallback:
+        max_error_mm3 = positive_limit(max_error_mm3, 'max_error_mm3')
     if max_bbox_difference_mm is not None:
         positive_limit(max_bbox_difference_mm, 'max_bbox_difference_mm')
     if not BRepCheck_Analyzer(source).IsValid():
@@ -46,16 +108,29 @@ def compare_rebuild(task, source, generated, plan, *, max_error_mm3, max_bbox_di
     # Source material removed by simplification increases the surrounding space.
     measurement_failure = None
     source_volume, generated_volume = measure(source,True), measure(generated,True)
-    try:
-        space_added = solid_difference(source, generated)
-        space_removed = solid_difference(generated, source)
-        error = space_added+space_removed
-    except MeasurementError as failure:
+    if use_fallback:
         space_added = space_removed = error = None
-        measurement_failure = str(failure)
+    else:
+        try:
+            space_added = solid_difference(source, generated)
+            space_removed = solid_difference(generated, source)
+            error = space_added+space_removed
+        except MeasurementError as failure:
+            space_added = space_removed = error = None
+            measurement_failure = str(failure)
     conservation_tolerance = max(task['tolerances']['linear_mm']**3,
                                  task['tolerances']['linear_mm']*max(measure(source),measure(generated)))
-    conservation_residual = abs((space_added-space_removed)-(source_volume-generated_volume)) if error is not None else None
+    attempts = []
+    if use_fallback:
+        max_error_mm3 = source_volume * 0.05
+        datum = [row[3] for row in task['source_world_transform']]
+        space_added, space_removed, attempts = measure_with_fallback(
+            source, generated, source_volume, generated_volume, conservation_tolerance, datum)
+        error = None if space_added is None else space_added+space_removed
+        measurement_failure = attempts[-1].get('failure')
+    method = attempts[-1]['method'] if attempts and error is not None else None
+    balance_volume = attempts[-1]['scaled_volume_mm3'] if method == 3 else generated_volume
+    conservation_residual = abs((space_added-space_removed)-(source_volume-balance_volume)) if error is not None else None
     consistent = conservation_residual is not None and conservation_residual <= conservation_tolerance
     source_bounds, generated_bounds = list(bounds(source).Get()), list(bounds(generated).Get())
     bbox_error = max(abs(a-b) for a,b in zip(source_bounds, generated_bounds))
@@ -91,6 +166,9 @@ def compare_rebuild(task, source, generated, plan, *, max_error_mm3, max_bbox_di
             'symmetric_difference_mm3':error,'source_volume_mm3':source_volume,
             'generated_volume_mm3':generated_volume,'net_space_increase_mm3':source_volume-generated_volume,
             'measurement_status':'failed' if error is None else 'ok' if consistent else 'inconsistent',
+            'difference_method':method,'difference_attempts':attempts,
+            'difference_ratio':error/source_volume if error is not None else None,
+            'visual_status':'needs_review',
             'measurement_failure':measurement_failure,'difference_conservation_residual_mm3':conservation_residual,'source_bounds_world_mm':source_bounds,
             'generated_bounds_world_mm':generated_bounds,'max_bbox_difference_mm':bbox_error,
             'b3_policy_check_status':b3_geometry['status'],
@@ -99,7 +177,7 @@ def compare_rebuild(task, source, generated, plan, *, max_error_mm3, max_bbox_di
                            'B5 assembly gaps/interference, openings/connectivity and final human review remain separate gates.']}
 
 
-def check_rebuild(task_path, artifact_dir, *, max_error_mm3, max_bbox_difference_mm=None):
+def check_rebuild(task_path, artifact_dir, *, max_error_mm3=None, max_bbox_difference_mm=None):
     task_path, artifact_dir = Path(task_path),Path(artifact_dir)
     task = load_task(task_path)
     b3_report = check_task(task_path,artifact_dir)
@@ -124,7 +202,7 @@ def main():
     parser.add_argument('task',type=Path)
     parser.add_argument('artifact',type=Path)
     parser.add_argument('report',type=Path)
-    parser.add_argument('--max-error-mm3',type=float,required=True)
+    parser.add_argument('--max-error-mm3',type=float,help='Legacy direct-only absolute limit. Omit to use the B4 fallback sequence and 5% criterion.')
     parser.add_argument('--max-bbox-difference-mm',type=float)
     args=parser.parse_args()
     try:
