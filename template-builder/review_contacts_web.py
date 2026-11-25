@@ -192,6 +192,77 @@ class ReviewSession:
             write_json(self.simplification_path, record)
             return self.state()
 
+    def batch_simplification(self, request, *, apply=False):
+        """Preview or atomically save server-derived proposals; never finalize B2."""
+        from b2_propose_part import propose_assembly
+        with self.lock:
+            self.check_revision(request, simplification=True)
+            state = self.state()
+            record = deepcopy(state['simplification'])
+            if record is None:
+                raise ValueError('接合面レビュー後に簡略化レビューを開始してください。')
+            part_id = request.get('part_id', '')
+            if part_id and part_id not in self.parts:
+                raise ValueError('Unknown part')
+            proposal = propose_assembly(self.bundle, self.candidate_path, self.review_path)
+            owned = {tuple(ref) for group in record.get('sets', []) for ref in group['faces']}
+            owned.update(tuple(row['face']) for row in record['proposals'] if row['decision'] != 'pending')
+            protected = set(map(tuple, record['protected_faces']))
+            unrendered = set(map(tuple, self.unrendered_faces))
+            groups = []
+            summary = []
+            deferred = []
+            for part in proposal['parts']:
+                if part_id and part['part_id'] != part_id:
+                    continue
+                counts = dict(keep=0, simplify=0, omit=0)
+                for proposed in part['proposed_sets']:
+                    decision = proposed['suggestion']
+                    refs = []
+                    for ref in proposed['faces']:
+                        key = tuple(ref)
+                        if key in owned or key in protected:
+                            continue
+                        if decision != 'keep' and key in unrendered:
+                            deferred.append({'face': ref, 'reason': '描画できない面の省略・近似は一括保存しません。'})
+                            continue
+                        refs.append(ref)
+                    if not refs:
+                        continue
+                    counts[decision] += len(refs)
+                    groups.append(dict(id='batch-'+decision+'-'+part['part_id'].replace('/','_'),
+                        name={'keep':'残す','omit':'省略する','simplify':'曲面を簡略化して残す'}[decision],
+                        faces=refs, decision=decision,
+                        approximation=dict(policy='preserve_volume',
+                            notes='接合面と必要な開口を優先して保持。具体的な近似と評価許容差はB3で定義しB4で確認する。',
+                            detail_policy='omit_chamfers_and_fillets') if decision=='simplify' else None))
+                summary.append(dict(part_id=part['part_id'],part_name=part['part_name'],counts=counts,
+                    reasons=[dict(suggestion=g['suggestion'],reason=g['reason']) for g in part['proposed_sets']]))
+            changes = {tuple(ref):group['decision'] for group in groups for ref in group['faces']}
+            pending_after = sum(row['decision']=='pending' and tuple(row['face']) not in changes for row in record['proposals'])
+            plan = dict(parts=summary,sets=groups,deferred=deferred,
+                changed_faces=len(changes),preserved_saved_faces=len(owned),pending_after=pending_after,
+                rule='保存済み判断と接合面を保持。表示した三分類案をまとめて保存する。C/R省略は幾何ヒューリスティックによる案。確定・B3開始は別操作。')
+            token = sha256(json.dumps(plan,sort_keys=True,ensure_ascii=False).encode()).hexdigest()
+            if not apply:
+                return dict(plan=plan,proposal_revision=token)
+            if request.get('proposal_revision') != token:
+                raise ValueError('提案が変わりました。一括提案を再表示してから保存してください。')
+            record.setdefault('sets', []).extend(groups)
+            for row in record['proposals']:
+                if tuple(row['face']) in changes:
+                    row['decision'] = changes[tuple(row['face'])]
+            record = canonicalize_sets(record)
+            record['confirmed'] = False
+            validate_review(record,state['draft'],self.parts)
+            old = self.simplification_path.read_bytes()
+            archive = self.simplification_path.with_name(self.simplification_path.stem+'.before-batch-'+sha256(old).hexdigest()[:16]+'.json')
+            if not archive.exists():
+                with archive.open('xb') as stream:
+                    stream.write(old)
+            write_json(self.simplification_path,record)
+            return {**self.state(),'batch_result':plan}
+
     def save_simplification(self, request):
         with self.lock:
             self.check_revision(request, simplification=True)
@@ -340,6 +411,17 @@ class ReviewSession:
             draft["reviews"][index-1] = {"candidate_id": index, "faces": item["faces"],
                 "decision": item["decision"], "condition": item["condition"], "measurement": measurement}
             draft["simplification_notes"] = notes
+            # A contact edit can invalidate simplification. Preserve both records
+            # so returning to contact review never destroys the previous work.
+            if self.review_path.exists():
+                previous=self.review_path.read_bytes()
+                archive=self.review_path.with_name(self.review_path.stem+'.before-contact-'+sha256(previous).hexdigest()[:16]+'.json')
+                if not archive.exists():archive.write_bytes(previous)
+            from b2_simplification import contact_signature
+            if contact_signature(state['draft']) != contact_signature(draft) and self.simplification_path.exists():
+                previous=self.simplification_path.read_bytes()
+                archive=self.simplification_path.with_name(self.simplification_path.stem+'.before-contact-'+sha256(previous).hexdigest()[:16]+'.json')
+                if not archive.exists():archive.write_bytes(previous)
             write_json(self.review_path, draft)
             return self.state()
 
@@ -377,8 +459,19 @@ def handler_for(session, scene):
                     part = parse_qs(urlsplit(self.path).query).get('part', [''])[0]
                     with session.lock:
                         session.ensure_sources()
-                        proposal = propose_part(session.bundle, session.candidate_path, session.review_path, part)
+                        from b2_propose_part import propose_assembly
+                        proposal = (propose_part(session.bundle, session.candidate_path, session.review_path, part)
+                                    if part else propose_assembly(session.bundle, session.candidate_path, session.review_path))
                     self.reply(200, proposal)
+                elif path == '/api/part-confirmation':
+                    from b2_confirm import confirmation_state
+                    part=parse_qs(urlsplit(self.path).query).get('part',[''])[0]
+                    with session.lock:
+                        session.ensure_sources()
+                        self.reply(200,confirmation_state(session,part))
+                elif path == "/api/fill-preview":
+                    preview = session.bundle / "fill-preview.json"
+                    self.reply(200, json.loads(preview.read_text(encoding="utf-8")) if preview.exists() else {})
                 elif path == "/api/state":
                     with session.lock:
                         self.reply(200, session.state())
@@ -409,10 +502,30 @@ def handler_for(session, scene):
                     raise ValueError("Invalid request size")
                 data = json.loads(self.rfile.read(length))
                 path = urlsplit(self.path).path
-                if path == "/api/save":
+                if path == "/api/fill-preview/capture":
+                    from base64 import b64decode
+                    part = {"1/3/3": "RCYD", "1/3/5": "FCYD", "1/2/2/2": "Coil_01",
+                            "1/4": "Suction_FCYD", "1/5": "Suction_RCYD", "1/3/6": "FH"}.get(data.get("part"))
+                    if part is None:
+                        raise ValueError("Unknown fill preview part")
+                    png = b64decode(data["png"], validate=True)
+                    if not png.startswith(b"\x89PNG\r\n\x1a\n"):
+                        raise ValueError("Expected a PNG capture")
+                    (session.bundle / f"viewer-fill-{part}.png").write_bytes(png)
+                    self.reply(200, {"saved": True})
+                elif path == "/api/save":
                     self.reply(200, session.save(data))
+                elif path == '/api/part-confirmation/approve':
+                    from b2_confirm import approve_part
+                    with session.lock:
+                        session.ensure_sources()
+                        self.reply(200,approve_part(session,data))
                 elif path == "/api/simplification/start":
                     self.reply(200, session.start_simplification(data))
+                elif path == "/api/simplification/batch/preview":
+                    self.reply(200, session.batch_simplification(data))
+                elif path == "/api/simplification/batch/apply":
+                    self.reply(200, session.batch_simplification(data, apply=True))
                 elif path == "/api/simplification/save":
                     self.reply(200, session.save_simplification(data))
                 elif path == "/api/simplification/finish":

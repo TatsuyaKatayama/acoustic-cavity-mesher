@@ -1,7 +1,8 @@
 """Dimension-driven FH trial template, rebuilt without source CAD or C/R details.
 
 Local datum is the large flange underside; placement is explicit world_z_mm.
-The pocket uses an extruded sector instead of detailed drafted/spline walls.
+Version 3 uses ruled slot and pocket drafts; earlier trial versions remain
+reproducible for comparison. No detailed CAD is imported or directly edited.
 """
 from copy import deepcopy
 from math import asin,cos,degrees,radians,sin,tan
@@ -78,6 +79,7 @@ def parameters(values=None):
     if not 2*degrees(asin((p['slot_width_mm']/2)/p['slot_center_radius_mm']))<p['slot_sweep_deg']<360/p['slot_count']:raise ValueError('Invalid nonoverlapping slot sweep')
     if not 0<p['pocket_end_angle_deg']-p['pocket_start_angle_deg']<360:raise ValueError('Invalid pocket sweep')
     if version in (2,3) and (p['pocket_inner_overlap_mm']!=0 or abs(p['ring_bottom_mm']-p['slot_upper_floor_mm'])>1e-9):raise ValueError('Version 2 requires zero pocket overlap and matching ring/upper-step floor')
+    if version!=3 and any(key in p for key in ('pocket_radial_draft_deg','pocket_start_spread_deg','pocket_end_spread_deg')):raise ValueError('Pocket draft parameters require construction version 3')
     if 'clean_final' in p and (version!=3 or type(p['clean_final']) is not bool):raise ValueError('Final cleanup flag is supported only for version 3')
     if version==3:
         for key in ('pocket_radial_draft_deg','pocket_start_spread_deg','pocket_end_spread_deg'):

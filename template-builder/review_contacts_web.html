@@ -11,16 +11,50 @@
 nav button[aria-pressed="true"]{background:#dbeafe;border-color:#155eaa;color:#124e87;font-weight:700}
 #simplify-save,#simplify-finish{background:#155eaa;color:white;border-color:#155eaa;margin-top:8px}
 #simplify-start{margin-top:10px}#simplify-finish{display:block;width:100%}
+/* Policy discussion belongs in the chat, not in a scrolling CAD sidebar. */
+main{grid-template-columns:260px minmax(0,1fr)}
+aside{overflow:hidden;padding:16px}
+#manual-review{display:none!important}
+#view-controls label{margin-top:16px}
+#view-controls h2{font-size:16px;margin:0 0 12px}
+#proposal-preview{width:100%;margin-top:12px;font-size:14px}
+#approve-part{width:100%;margin-top:16px;background:#155eaa;color:white;border-color:#155eaa}
+#part-status{font-size:14px;line-height:1.5;white-space:pre-wrap}
+#edit-contacts{display:none!important}
+#view-controls .hint{margin:12px 0;line-height:1.5}
+#face-inspector{position:absolute;right:12px;bottom:12px;z-index:120;max-width:360px;padding:10px 12px;background:#fff;border:1px solid #b2c0d0;border-radius:6px;font-size:14px}
+#face-reference{display:block;margin:6px 0;white-space:pre-wrap;user-select:text;overflow-wrap:anywhere}
+#inspect-face[aria-pressed=true]{background:#dbeafe;border-color:#155eaa}
+.stage{position:relative}
+#contact-editor{position:fixed;top:115px;right:16px;left:auto;margin:0;width:350px;max-height:calc(100dvh - 135px);overflow:auto;border:1px solid #b2c0d0;border-radius:8px;padding:14px;z-index:140;background:white;color:#213148}
+#contact-editor::backdrop{background:transparent}
+#contact-editor h2{font-size:16px;margin:0 0 10px}
+#contact-editor #proposal-info,#contact-editor #proposal-summary{display:none}
+#contact-editor label{margin-top:8px}
+#contact-editor .metric{padding:6px;font-size:13px;line-height:1.4}
+#contact-editor #refs{font-size:12px;margin:6px 0}
+#contact-editor textarea{height:46px}
+#contact-close{float:right;padding:4px 8px}
+@media(max-width:900px){main{grid-template-columns:240px minmax(0,1fr)}}
 </style>
-<header><h1>B2 接合面・簡略化レビュー</h1><span>接合面を確定してから簡略化を判断</span></header>
+<header><h1>B2 部品確認</h1><span>接合案と簡略化案をまとめて確認</span></header>
 <main>
 <aside>
+<section id="view-controls">
+<h2>表示する部品</h2>
+<label for="part-filter">対象部品</label><select id="part-filter"><option value="">全体</option></select>
+<button id="proposal-preview" aria-pressed="false">簡略化案を色で見る</button>
+<p class="hint">青：残す　紫：簡略化<br>赤：省略候補　緑：接合面</p>
+<p class="hint">接合と簡略化を一緒に確認します。修正はチャットで指示してください。</p>
+<p id="part-status" role="status">提案を読み込み中…</p>
+<button id="approve-part" disabled>承認して次の部品へ</button>
+</section>
+<div id="manual-review" hidden>
 <nav class="row" aria-label="レビュー工程"><button id="contacts-stage" aria-pressed="true">1 接合面</button><button id="simplify-stage" aria-pressed="false" disabled>2 簡略化</button></nav>
 <p id="stage-status" class="hint">接合面レビューを全件保存すると簡略化レビューへ進めます。</p>
 <section id="contact-panel">
-<label for="part-filter">レビュー対象部品</label><select id="part-filter"><option value="">全体</option></select>
-<button id="proposal-preview" aria-pressed="false">未承認の簡略化案をプレビュー</button>
 <p id="proposal-info" class="hint"></p>
+<div id="proposal-summary" hidden></div>
 <label for="candidate">接合候補</label><select id="candidate"></select>
 <p id="progress" class="hint"></p>
 <p id="renderwarning" class="hint" role="alert"></p>
@@ -42,6 +76,15 @@ nav button[aria-pressed="true"]{background:#dbeafe;border-color:#155eaa;color:#1
 </div>
 <div id="simplify-review-panel" hidden>
 <p id="simplify-progress" class="hint"></p>
+<fieldset><legend>提案をまとめて確認・保存</legend>
+<p>面ごとの承認は不要です。保存済み判断を保持し、対象範囲の三分類案を部品別にまとめて提示します。</p>
+<label for="batch-part">対象範囲</label><select id="batch-part"><option value="">全24配置（全体）</option></select>
+<button id="batch-preview">一括提案を表示</button>
+<div id="batch-summary" aria-live="polite"></div>
+<button id="batch-apply" disabled>表示した提案をまとめて保存（未確定）</button>
+<p class="hint">接合面・開口を保護。C/R省略案を含みます。保存済みの判断は上書きしません。個別編集は下の詳細操作で行えます。</p>
+</fieldset>
+<details><summary>詳細操作：面・セットを個別に修正する</summary>
 <label for="simplify-candidate">削除提案の面</label><select id="simplify-candidate"></select>
 <div id="simplify-metrics" class="metric"></div>
 <p id="simplify-refs" class="hint"></p>
@@ -63,6 +106,7 @@ nav button[aria-pressed="true"]{background:#dbeafe;border-color:#155eaa;color:#1
 <label for="simplify-notes">簡略化レビューのメモ</label><textarea id="simplify-notes" placeholder="必要な開口・内壁、まとめて扱う形状、例外など"></textarea>
 <button id="simplify-save">簡略化セットを保存</button>
 <button id="simplify-revert">未保存の簡略化判断を戻す</button>
+</details>
 <button id="simplify-finish">簡略化レビューを確定</button>
 </div>
 <p class="hint">緑：保護する接合面　桃：未確認　青：残す　紫：簡略化して残す　赤：省略する　橙：選択中のセット</p>
@@ -70,15 +114,20 @@ nav button[aria-pressed="true"]{background:#dbeafe;border-color:#155eaa;color:#1
 </section>
 <p id="message" role="status" aria-live="polite"></p>
 <p class="hint">片側表示・断面で隠れた面を確認できます。接合面の変更後は簡略化レビューを再確認します。B3向け出力は両レビューの完了後に専用CLIで行います。</p>
+</div>
 </aside>
 <section class="stage">
 <div class="tools">
+<button id="capture-view">表示をPNG保存</button>
+<button id="edit-contacts" disabled>接合面を修正</button>
+<button id="inspect-face" aria-pressed="false">Face IDを調べる</button>
 <select id="isolate" aria-label="表示範囲"><option value="pair">対象部品</option><option value="first">1面目の部品のみ</option><option value="second">2面目の部品のみ</option><option value="all">全体</option></select>
 <select id="pick" aria-label="面の差し替え"><option value="off">操作モード</option><option value="0">1面目をクリックで差し替え</option><option value="1">2面目をクリックで差し替え</option></select>
 <button id="fit">表示範囲に合わせる</button>
 <select id="clipaxis" aria-label="断面軸"><option value="off">断面なし</option><option value="0">X断面</option><option value="1">Y断面</option><option value="2">Z断面</option></select>
 <input id="clip" aria-label="断面位置" type="range" min="0" max="100" value="50">
-</div><div id="viewport"></div>
+</div><div id="viewport"></div><div id="face-inspector" hidden><strong>選択面</strong><output id="face-reference">CADの面をクリックしてください。</output><button id="copy-face" disabled>IDをコピー</button></div>
 </section></main>
+<dialog id="contact-editor"><button id="contact-close">閉じる</button><h2>接合面を修正</h2><p class="hint">変更前の判断は保存します。接合条件を変えると簡略化方針の再確認が必要になります。</p><label for="contact-pick">CADで対応面を選び直す</label><select id="contact-pick"><option value="off">表示・回転</option><option value="0">1面目を差し替え</option><option value="1">2面目を差し替え</option></select><div id="contact-editor-body"></div><p id="contact-editor-status" role="status"></p></dialog>
 <script type="module" src="/review_contacts_web.js"></script>
 </html>

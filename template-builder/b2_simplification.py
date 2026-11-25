@@ -19,6 +19,9 @@ def contact_signature(draft):
     identity = {key: draft[key] for key in ("manifest_sha256", "candidates_sha256")}
     identity["reviews"] = [{key: row[key] for key in
         ("candidate_id", "faces", "decision", "condition")} for row in draft["reviews"]]
+    for identity_row, row in zip(identity["reviews"], draft["reviews"]):
+        if "adjust_face" in row:
+            identity_row["adjust_face"] = row["adjust_face"]
     return sha256(json.dumps(identity, sort_keys=True, separators=(",", ":"),
                              ensure_ascii=False).encode()).hexdigest()
 
@@ -30,7 +33,10 @@ def protected_faces(draft, parts):
         if row["decision"] == "pending":
             raise ValueError("接合面レビューを全件保存してから簡略化レビューへ進んでください。")
         if row["decision"] == "accepted":
-            protected.update(pair)
+            adjust = row.get("adjust_face")
+            if adjust is not None and (tuple(adjust) not in pair or row["condition"]["mode"] != "close"):
+                raise ValueError("Invalid adjustment face for contact closure")
+            protected.update(ref for ref in pair if adjust is None or ref != tuple(adjust))
     return protected
 
 

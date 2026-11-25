@@ -79,6 +79,7 @@ def make_handoff(draft, parts, simplification=None):
             **item["condition"],
             "contact_type": measurement["contact_type"],
             "source_measurement": measurement,
+            **({"adjust_face": item["adjust_face"]} if "adjust_face" in item else {}),
         })
     from b2_simplification import handoff_guidance
     face_review = handoff_guidance(simplification, draft, parts)

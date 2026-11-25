@@ -48,7 +48,7 @@ def build_task(task,dimensions,output):
             source=[list(r) for r in sorted(set(map(tuple,source)))]
             data=brep_bytes(shape.wrapped);filename=f'history-{index:03d}.brep';(work/filename).write_bytes(data)
             history.append({'operation_id':name,'geometry':filename,'sha256':digest(data),'source_faces':source,'volume_mm3':shape.Volume()})
-            operations.append({'id':name,'operation':'fh_'+name.split('_')[0],'combine':'new' if index==1 else 'cut' if name.startswith(('shaft','arc','upper','bolt','aux','sector','drafted')) else 'union','source_faces':source,'rationale':'Dimension-driven FH feature; source surfaces used as reference, no detailed solid editing.'})
+            operations.append({'id':name,'operation':'fh_'+name.split('_')[0],'combine':'new' if index==1 else 'replace' if name=='same_domain_cleanup' else 'cut' if name=='ring_recess' or name.startswith(('shaft','arc','upper','bolt','aux','sector','drafted')) else 'union','source_faces':source,'rationale':'Dimension-driven FH feature; source surfaces used as reference, no detailed solid editing.'})
         final=brep_bytes(shape.wrapped);(work/'final.brep').write_bytes(final)
         plan={'schema_version':1,'template_id':fh_template.TEMPLATE_ID,'template_version':fh_template.TEMPLATE_VERSION,
             'parameters':p,'operations':operations,

@@ -6,9 +6,14 @@ const labels = {pending:'未確認',accepted:'採用',rejected:'除外'};
 let state, scene, page, viewer, row=0, current, dirty=false, loading=false, sequence=0, ready=false;
 let phase='contacts', simplifyRow=0, simplifyCurrent;
 let proposal=null, proposalPreview=false;
+let batchPreview=null;
+let inspectFaces=false, inspectedRef=null;
+let contactEditing=false;
+let partConfirmation=null;
+let fillPreview={};
 let filterPart=new URLSearchParams(location.search).get('part')||'';
 let activeSetId=null, facePicking=false, gesture=null, press=null;
-function syncFacePicking(){if(page)page.handleMessage({type:'ui',config:{analysisTool:phase==='simplification'&&facePicking?'select':phase==='contacts'&&$('pick').value!=='off'?'select':'off',shapeFilter:'face'}});}
+function syncFacePicking(){if(page)page.handleMessage({type:'ui',config:{analysisTool:inspectFaces||phase==='simplification'&&facePicking?'select':phase==='contacts'&&$('pick').value!=='off'?'select':'off',shapeFilter:'face'}});}
 function editPickedFace(ref,remove){
   if((state.simplification?.protected_faces||[]).some(r=>refKey(r)===refKey(ref))){message('接合面は残す面に固定されています。',true);return;}
   if(ref[0]!==$('set-part').value){message('対象部品の面を選んでください。',true);return;}
@@ -16,7 +21,7 @@ function editPickedFace(ref,remove){
   if(option&&option.selected!==!remove){option.selected=!remove;markDirty();draw();}
 }
 const names={}, leaves={};
-function message(text,error=false){$('message').textContent=text;$('message').dataset.error=error;}
+function message(text,error=false){$('message').textContent=text;$('message').dataset.error=error;$('contact-editor-status').textContent=contactEditing?text:'';}
 async function api(path,data){
   const response=await fetch(path,data===undefined?{}:{method:'POST',headers:{'Content-Type':'application/json','X-B2-Token':state.token},body:JSON.stringify(data)});
   const result=await response.json();if(!response.ok)throw Error(result.error || response.statusText);return result;
@@ -28,7 +33,7 @@ function controls(){
   $('simplify-stage').disabled=!state?.contacts_complete||loading||!ready;
   $('contacts-stage').disabled=loading||!ready;
   $('part-filter').disabled=loading;
-  $('proposal-preview').disabled=loading||!filterPart||phase!=='contacts';
+  $('proposal-preview').disabled=loading||phase!=='contacts';
   if(proposalPreview)for(const id of ['decision','mode','target','tolerance','notes','pick'])$(id).disabled=true;
   else {$('decision').disabled=false;$('notes').disabled=false;$('pick').disabled=phase!=='contacts';}
   $('candidate').disabled=loading;$('simplify-candidate').disabled=loading;
@@ -44,6 +49,12 @@ function controls(){
   const record=state?.simplification;
   $('simplify-finish').disabled=loading||!record||record.proposals.some(r=>r.decision==='pending')||dirty;
   $('simplify-start').disabled=loading||!state?.contacts_complete;
+  $('batch-preview').disabled=loading||dirty||!state?.simplification;
+  $('batch-part').disabled=loading||dirty;
+  $('batch-apply').disabled=loading||dirty||!batchPreview||!batchPreview.plan.changed_faces;
+  $('edit-contacts').disabled=loading||!ready;
+  $('pick').hidden=true;$('isolate').hidden=true;
+  $('approve-part').disabled=loading||!ready||!partConfirmation||partConfirmation.approved;
 }
 function stageStatus(){
   const text=!state.contacts_complete?'接合面レビューを全件保存すると簡略化レビューへ進めます。':state.simplification_status==='stale'?'接合面が変更されました。簡略化の削除提案を作り直してください。':state.simplification_status==='confirmed'?'接合面・簡略化レビューとも完了しています。':state.simplification?'接合面を保護して、削除提案をレビューしてください。':'接合面レビュー完了。次に簡略化の削除提案を作成してください。';
@@ -65,7 +76,7 @@ async function measure(){const request=++sequence;$('metrics').textContent='OCCT
 function draw(){
   if(!ready)return;
   const refs=viewRefs();
-  const highlighted=new Set((proposalPreview?[]:refs).map(refKey));
+  const highlighted=new Set((proposalPreview||phase==='contacts'&&!contactEditing?[]:refs).map(refKey));
   const previewFaces=new Map((proposalPreview?proposal?.faces||[]:[]).map(r=>[refKey(r.face),r.suggestion]));
   const protectedFaces=new Set((state.simplification?.protected_faces||[]).map(refKey));
   const proposals=new Map((state.simplification?.proposals||[]).map(r=>[refKey(r.face),r.decision]));
@@ -87,7 +98,8 @@ function draw(){
       if(setColors.has(key)&&!protectedFaces.has(key))color=setColors.get(key);
     }
     if(previewFaces.has(key))color={keep:'#4a85c4',simplify:'#8961c6',omit:'#d54848'}[previewFaces.get(key)];
-    if(proposalPreview&&proposal?.contacts.some(c=>c.saved_decision!=='rejected'&&c.faces.some(r=>refKey(r)===key)))color='#16857b';
+    if(proposalPreview&&partConfirmation?.plan.contacts.some(c=>c.decision==='accepted'&&refKey(c.adjust_face)!==key&&c.faces.some(r=>refKey(r)===key)))color='#16857b';
+    if(proposalPreview&&fillPreview[ref[0]]?.includes(ref[1]))color='#e55735';
     if(highlighted.has(key)&&!protectedFaces.has(key))color='#ff8c00';
     if(leaves[path].color!==color){leaves[path].color=color;changed=true;}
   }
@@ -99,7 +111,7 @@ function draw(){
   }
   syncFacePicking();
   const mode=$('isolate').value;
-  const ids= proposalPreview?[filterPart]:mode==='all'?null:phase==='simplification'?[$('set-part').value]:!refs.length?null: mode==='pair'||phase==='simplification'?refs.map(f=>f[0]):[refs[mode==='first'?0:1][0]];
+  const ids=contactEditing?(current?.faces||[]).map(r=>r[0]):phase==='contacts'?(filterPart?[filterPart]:null):mode==='all'?null:[$('set-part').value];
   viewer.setStates(Object.fromEntries(Object.entries(scene.face_map).map(([path,ref])=>[path,!ids||ids.includes(ref[0])?[1,1]:[0,0]])));
   clip();
 }
@@ -118,7 +130,7 @@ function fitVisible(){
   if(!ready)return;
   const refs=viewRefs();
   const mode=$('isolate').value;
-  const ids=proposalPreview?[filterPart]:mode==='all'?Object.keys(scene.part_bounds):phase==='simplification'?[$('set-part').value]:!refs.length?Object.keys(scene.part_bounds):mode==='pair'||phase==='simplification'?refs.map(f=>f[0]):[refs[mode==='first'?0:1][0]];
+  const ids=contactEditing?(current?.faces||[]).map(r=>r[0]):phase==='contacts'?(filterPart?[filterPart]:Object.keys(scene.part_bounds)):[$('set-part').value];
   const boxes=ids.map(id=>scene.part_bounds[id]);
   const low=[0,1,2].map(i=>Math.min(...boxes.map(b=>b[i]))),high=[0,1,2].map(i=>Math.max(...boxes.map(b=>b[i+3])));
   const target=low.map((v,i)=>(v+high[i])/2),camera=viewer.getCameraLocationSettings();
@@ -139,9 +151,6 @@ function loadRow(){
 }
 function selected(status){
   if(!ready||!status.selected)return;
-  if(phase==='simplification'&&(!facePicking||!gesture||gesture.consumed))return;
-  if(proposalPreview)return;
-  if(phase==='contacts'&&(!current||$('pick').value==='off'))return;
   const refs=[];
   for(const [key,ids] of Object.entries(status.selected)){
     // Each rendered leaf is one BREP face. Accept only a Face selection on a
@@ -151,6 +160,15 @@ function selected(status){
     refs.push(scene.face_map[path]);
   }
   if(refs.length!==1)return;
+  if(inspectFaces){
+    inspectedRef=refs[0];
+    $('face-reference').textContent=`${names[inspectedRef[0]]}\n配置ID ${inspectedRef[0]} · BREP面ID ${inspectedRef[1]}`;
+    $('copy-face').disabled=false;
+    return;
+  }
+  if(phase==='simplification'&&(!facePicking||!gesture||gesture.consumed))return;
+  if(proposalPreview)return;
+  if(phase==='contacts'&&(!current||$('pick').value==='off'))return;
   if(phase==='simplification'){const remove=gesture.remove;gesture.consumed=true;queueMicrotask(()=>{viewer.clearSelection();editPickedFace(refs[0],remove);});return;}
   const side=Number($('pick').value),ref=refs[0];
   if(ref[0]===current.faces[1-side][0]){message('異なる部品の面を選んでください。',true);return;}
@@ -158,13 +176,67 @@ function selected(status){
   $('pick').value='off';page.handleMessage({type:'ui',config:{analysisTool:'off'}});
   textRefs();draw();measure();markDirty();
 }
-$('part-filter').onchange=()=>{
+$('part-filter').onchange=async()=>{
   if(dirty){$('part-filter').value=filterPart;message('未保存の変更を保存するか、戻してください。',true);return;}
   filterPart=$('part-filter').value;proposalPreview=false;proposal=null;
-  $('proposal-preview').setAttribute('aria-pressed','false');$('proposal-info').textContent='';
+  inspectedRef=null;$('face-reference').textContent='CADの面をクリックしてください。';$('copy-face').disabled=true;
+  $('proposal-preview').setAttribute('aria-pressed','false');$('proposal-info').textContent='';$('proposal-summary').hidden=true;
   const index=state.draft.reviews.findIndex(r=>!filterPart||r.faces.some(f=>f[0]===filterPart));
   row=index<0?0:index;fillList();if(index<0){current=undefined;$('metrics').textContent='この部品の接合候補はありません。';$('refs').textContent='';draw();controls();}else loadRow();fitVisible();
+  syncFacePicking();
+  await loadPartConfirmation();
 };
+async function loadPartConfirmation(){
+  if(!filterPart)return;
+  try{loading=true;partConfirmation=null;controls();
+    partConfirmation=await api('/api/part-confirmation?part='+encodeURIComponent(filterPart));
+    proposal=partConfirmation.proposal;
+    const decisions=new Map(partConfirmation.plan.faces.map(r=>[refKey(r.face),r.decision]));
+    for(const face of proposal.faces)face.suggestion=decisions.get(refKey(face.face));
+    proposalPreview=true;$('proposal-preview').setAttribute('aria-pressed','true');
+    const cs=partConfirmation.plan.contacts;
+    const gaps=cs.filter(c=>c.decision==='accepted'&&c.condition.mode==='keep_gap');
+    $('part-status').textContent=`${partConfirmation.approved_parts.length} / ${partConfirmation.total_parts} 部品を承認済み\nこの部品：${partConfirmation.approved?'承認済み':'未承認'} · 接合 ${cs.length} 件${gaps.length?'（隙間保持 '+gaps.length+' 件）':''}`;
+    const dropped=cs.filter(c=>c.decision==='rejected'&&c.faces.some(([pid,id])=>fillPreview[pid]?.includes(id))).length;
+    if(dropped)$('part-status').textContent+=`\n充填に伴い接合条件を ${dropped} 件解除`;
+    draw();fitVisible();
+  }catch(e){$('part-status').textContent=e.message;}finally{loading=false;controls();}
+}
+$('approve-part').onclick=async()=>{
+  if(!partConfirmation)return;
+  try{loading=true;controls();
+    const receipt=await api('/api/part-confirmation/approve',{part_id:filterPart,proposal_revision:partConfirmation.proposal_revision});
+    const ids=Object.keys(scene.part_bounds),index=ids.indexOf(filterPart);
+    const ordered=[...ids.slice(index+1),...ids.slice(0,index+1)];
+    const next=ordered.find(id=>!receipt.approved_parts.includes(id));
+    if(next){filterPart=next;$('part-filter').value=next;await $('part-filter').onchange();}
+    else{await loadPartConfirmation();$('part-status').textContent=`全${receipt.total_parts}部品の確認が完了しました。B3は開始していません。`;}
+  }catch(e){$('part-status').textContent=e.message;}finally{loading=false;controls();}
+};
+$('inspect-face').onclick=()=>{
+  inspectFaces=!inspectFaces;$('inspect-face').setAttribute('aria-pressed',String(inspectFaces));
+  $('face-inspector').hidden=!inspectFaces;syncFacePicking();
+};
+$('copy-face').onclick=async()=>{
+  if(!inspectedRef)return;
+  try{await navigator.clipboard.writeText(`${names[inspectedRef[0]]} 配置ID ${inspectedRef[0]} BREP面ID ${inspectedRef[1]}`);$('copy-face').textContent='コピー済み';}
+  catch{$('copy-face').textContent='表示したIDを選択してコピー';}
+};
+$('edit-contacts').onclick=()=>{
+  if(dirty){message('未保存の変更を保存するか戻してください。',true);return;}
+  contactEditing=true;inspectFaces=false;proposalPreview=false;phase='contacts';
+  $('inspect-face').setAttribute('aria-pressed','false');$('face-inspector').hidden=true;
+  $('proposal-preview').setAttribute('aria-pressed','false');
+  $('contact-editor-body').append($('contact-panel'));$('contact-panel').hidden=false;
+  $('contact-editor').show();fillList();loadRow();fitVisible();
+};
+$('contact-close').onclick=()=>{
+  if(dirty){message('変更を保存するか「未保存の変更を戻す」を押してください。',true);return;}
+  contactEditing=false;$('pick').value='off';$('contact-pick').value='off';
+  $('contact-editor').close();draw();syncFacePicking();fitVisible();
+};
+$('contact-editor').addEventListener('cancel',event=>{event.preventDefault();$('contact-close').click();});
+$('contact-pick').onchange=()=>{$('pick').value=$('contact-pick').value;syncFacePicking();};
 $('proposal-preview').onclick=async()=>{
   if(dirty){message('未保存の変更を保存するか、戻してください。',true);return;}
   try{
@@ -172,7 +244,7 @@ $('proposal-preview').onclick=async()=>{
     if(!proposalPreview)proposal=await api('/api/part-proposal?part='+encodeURIComponent(filterPart));
     proposalPreview=!proposalPreview;$('proposal-preview').setAttribute('aria-pressed',String(proposalPreview));
     const counts=Object.fromEntries(['keep','simplify','omit'].map(d=>[d,proposal.faces.filter(r=>r.suggestion===d).length]));
-    $('proposal-info').textContent=proposalPreview?`未承認の参考表示：残す案（青）${counts.keep}面、近似案（紫）${counts.simplify}面、省略案（赤）${counts.omit}面。緑は未確定を含む接合候補の仮保護。これは保存・承認ではありません。先に接合面をレビューしてください。`:'';
+    $('proposal-info').textContent=proposalPreview?`未承認の提案：残す（青）${counts.keep}面、簡略化して残す（紫）${counts.simplify}面、省略する（赤）${counts.omit}面。緑は未確定を含む接合候補の仮保護。まず以下の部品別案と理由を確認してください。保存・承認は変更しません。`:'';
     if(proposalPreview){$('pick').value='off';syncFacePicking();}draw();fitVisible();
   }catch(e){message(e.message,true);}finally{loading=false;controls();}
 };
@@ -186,6 +258,7 @@ $('save').onclick=async()=>{
     const mode=$('mode').value;
     const item={candidate_id:current.candidate_id,faces:current.faces,decision,condition:decision==='accepted'?{mode,target_gap_mm:mode==='close'?0:Number($('target').value),tolerance_mm:Number($('tolerance').value)}:null};
     state=await api('/api/save',{revision:state.revision,item,simplification_notes:$('notes').value});fillList();loadRow();stageStatus();message('接合面レビューをファイルに保存しました。');
+    if(contactEditing)$('contact-pick').value='off';
   }catch(e){message(e.message,true);}finally{loading=false;controls();}
 };
 function loadSetForm(group=null){
@@ -212,6 +285,8 @@ function fillSetMembers(selected=[]){
   $('set-members').replaceChildren(...refs.map(ref=>{const o=new Option(`面 ${ref[1]}${otherOwners.has(refKey(ref))?'（保存時に移動）':''}`,refKey(ref));o.selected=selectedKeys.has(o.value);return o;}));
 }
 function loadSimplification(selectedSetId=null){
+  batchPreview=null;$('batch-summary').replaceChildren();
+  $('batch-part').replaceChildren(new Option('全配置（全体）',''),...Object.keys(scene.part_bounds).map(id=>new Option(`${names[id]} · ${id}`,id)));
   const record=state.simplification;
   $('simplify-start-panel').hidden=!!record;$('simplify-review-panel').hidden=!record;
   if(!record){simplifyCurrent=undefined;activeSetId=null;$('set-members').replaceChildren();draw();controls();return;}
@@ -242,6 +317,7 @@ function loadSimplification(selectedSetId=null){
 }
 function switchPhase(next){
   proposalPreview=false;$('proposal-preview').setAttribute('aria-pressed','false');
+  $('proposal-info').textContent='';$('proposal-summary').hidden=true;
   if(dirty){message('未保存の変更を保存するか、戻してから工程を切り替えてください。',true);return;}
   if(next==='simplification'&&!state.contacts_complete){message('接合面レビューを先に完了してください。',true);return;}
   phase=next;$('contact-panel').hidden=phase!=='contacts';$('simplify-panel').hidden=phase!=='simplification';
@@ -252,6 +328,26 @@ function switchPhase(next){
   if(phase==='contacts')loadRow();else loadSimplification();stageStatus();fitVisible();
 }
 const simplifyRequest=()=>({revision:state.revision,simplification_revision:state.simplification_revision});
+$('batch-part').onchange=()=>{batchPreview=null;$('batch-summary').replaceChildren();controls();};
+$('batch-preview').onclick=async()=>{
+  try{loading=true;controls();
+    batchPreview=await api('/api/simplification/batch/preview',{...simplifyRequest(),part_id:$('batch-part').value});
+    const plan=batchPreview.plan,box=$('batch-summary');box.replaceChildren();
+    const heading=document.createElement('p');heading.textContent=`${plan.changed_faces}面をまとめて保存する案です。保存済み ${plan.preserved_saved_faces}面は保持。保存後の未確認 ${plan.pending_after}面。`;box.append(heading);
+    for(const part of plan.parts){const line=document.createElement('p');const c=part.counts;line.textContent=`${part.part_name} · ${part.part_id}：残す ${c.keep} / 簡略化して残す ${c.simplify} / 省略 ${c.omit}面`;box.append(line);}
+    const rule=document.createElement('p');rule.textContent='方針：接合面・内壁・穴・開口は保持。主要曲面は簡略化して残す案。非接合の円錐・トーラスはC/R省略候補。機能形状の場合は部品別に修正してください。';box.append(rule);
+    for(const row of plan.deferred){const line=document.createElement('p');line.textContent=`要確認 ${names[row.face[0]]} 面${row.face[1]}：${row.reason}`;box.append(line);}
+    message('部品別の一括提案です。内容を確認し、まとめて保存できます。');
+  }catch(e){message(e.message,true);}finally{loading=false;controls();}
+};
+$('batch-apply').onclick=async()=>{
+  if(!batchPreview||dirty)return;
+  try{loading=true;controls();
+    state=await api('/api/simplification/batch/apply',{...simplifyRequest(),part_id:$('batch-part').value,proposal_revision:batchPreview.proposal_revision});
+    const result=state.batch_result;loadSimplification();stageStatus();
+    message(`${result.changed_faces}面の提案をまとめて保存しました。未確認 ${result.pending_after}面。レビュー確定とB3開始は別操作です。`);
+  }catch(e){batchPreview=null;message(e.message,true);}finally{loading=false;controls();}
+};
 $('contacts-stage').onclick=()=>switchPhase('contacts');$('simplify-stage').onclick=()=>switchPhase('simplification');
 $('simplify-start').onclick=async()=>{
   try{loading=true;controls();state=await api('/api/simplification/start',{...simplifyRequest(),threshold_mm:Number($('threshold').value)});loadSimplification();stageStatus();message('接合面を保護して削除提案を作成しました。');}
@@ -291,7 +387,7 @@ $('simplify-finish').onclick=async()=>{
 };
 window.addEventListener('beforeunload',event=>{if(dirty){event.preventDefault();event.returnValue='';}});
 try{
-  [state,scene]=await Promise.all([api('/api/state'),api('/api/scene')]);
+  [state,scene,fillPreview]=await Promise.all([api('/api/state'),api('/api/scene'),api('/api/fill-preview')]);
   for(const node of state.nodes)names[node.id]=node.definition_name || node.name;
   function walk(node){if(node.parts)node.parts.forEach(walk);else{leaves[node.id]=node;}}
   walk(scene.model.data.shapes);
@@ -304,11 +400,25 @@ try{
   class ReviewViewer extends Viewer{constructor(...args){super(...args);viewer=this;}}
   page=createPage({Viewer:ReviewViewer,Display,Timer,container,listen:false,theme:'light',getSize:()=>({width:container.clientWidth,height:container.clientHeight}),overrides:{display:{theme:'light',glass:true,tools:true,treeWidth:200,externalMeasurementBackend:false},viewer:{control:'trackball',up:'Z',tools:true,glass:true}},send:(type,status)=>{if(type==='status')selected(status);}});
   page.handleMessage(scene.model);ready=true;
-  $('part-filter').replaceChildren(new Option('全体',''),...Object.keys(scene.part_bounds).map(id=>new Option(`${names[id]} · ${id}`,id)));
-  if(!scene.part_bounds[filterPart])filterPart='';$('part-filter').value=filterPart;
+  $('capture-view').onclick=async()=>{
+    const {dataUrl}=await viewer.getImage('b2');
+    if(!dataUrl)return;
+    if(fillPreview[filterPart]||filterPart==='1/3/6'){
+      await api('/api/fill-preview/capture',{part:filterPart,png:dataUrl.split(',')[1]});
+      $('capture-view').textContent='PNG保存済み';
+      return;
+    }
+    const link=document.createElement('a');
+    link.href=dataUrl;link.download=`B2-${names[filterPart]||'CAD'}.png`;link.click();
+  };
+  $('part-filter').replaceChildren(...Object.keys(scene.part_bounds).map(id=>new Option(`${names[id]} · ${id}`,id)));
+  if(!scene.part_bounds[filterPart])filterPart=Object.keys(scene.part_bounds)[0];$('part-filter').value=filterPart;
   const first=state.draft.reviews.findIndex(r=>!filterPart||r.faces.some(f=>f[0]===filterPart));if(first>=0)row=first;
   fillList();stageStatus();
   if(scene.unrendered_faces.length)$('renderwarning').textContent=`描画対象外の面 ${scene.unrendered_faces.length} 件: ${scene.unrendered_faces.map(f=>`${names[f[0]]} 面${f[1]}`).join('、')}。該当面を含む候補はこの画面では採用できません。`;
   if(state.draft.reviews.length){loadRow();fitVisible();}else{message('接合候補はありません。');$('save').disabled=true;}
+  // The normal screen is a read-only, part-scoped CAD view. Decisions happen in chat.
+  $('isolate').value='all';draw();fitVisible();
+  if(filterPart)await $('part-filter').onchange();
   window.addEventListener('resize',()=>page.resize());
 }catch(e){message(e.message,true);console.error(e);}
