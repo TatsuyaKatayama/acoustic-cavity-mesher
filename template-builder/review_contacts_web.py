@@ -9,7 +9,7 @@ from pathlib import Path
 import secrets
 from uuid import uuid4
 from threading import Lock
-from urllib.parse import urlsplit
+from urllib.parse import urlsplit, parse_qs
 import webbrowser
 
 from OCP.TopoDS import TopoDS
@@ -372,7 +372,14 @@ def handler_for(session, scene):
                 return
             path = urlsplit(self.path).path
             try:
-                if path == "/api/state":
+                if path == '/api/part-proposal':
+                    from b2_propose_part import propose_part
+                    part = parse_qs(urlsplit(self.path).query).get('part', [''])[0]
+                    with session.lock:
+                        session.ensure_sources()
+                        proposal = propose_part(session.bundle, session.candidate_path, session.review_path, part)
+                    self.reply(200, proposal)
+                elif path == "/api/state":
                     with session.lock:
                         self.reply(200, session.state())
                 elif path == "/api/scene":

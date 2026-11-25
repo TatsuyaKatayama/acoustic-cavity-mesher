@@ -18,6 +18,9 @@ nav button[aria-pressed="true"]{background:#dbeafe;border-color:#155eaa;color:#1
 <nav class="row" aria-label="レビュー工程"><button id="contacts-stage" aria-pressed="true">1 接合面</button><button id="simplify-stage" aria-pressed="false" disabled>2 簡略化</button></nav>
 <p id="stage-status" class="hint">接合面レビューを全件保存すると簡略化レビューへ進めます。</p>
 <section id="contact-panel">
+<label for="part-filter">レビュー対象部品</label><select id="part-filter"><option value="">全体</option></select>
+<button id="proposal-preview" aria-pressed="false">未承認の簡略化案をプレビュー</button>
+<p id="proposal-info" class="hint"></p>
 <label for="candidate">接合候補</label><select id="candidate"></select>
 <p id="progress" class="hint"></p>
 <p id="renderwarning" class="hint" role="alert"></p>
@@ -49,7 +52,7 @@ nav button[aria-pressed="true"]{background:#dbeafe;border-color:#155eaa;color:#1
 <button id="select-faces" aria-pressed="false">CAD面選択</button><button id="clear-faces">選択をクリア</button><p>クリックで追加、Shift＋クリックで除外。矩形選択はありません。接合面は固定です。</p><label for="set-members">対象面（Ctrlで複数選択）</label><select id="set-members" multiple size="6"></select>
 <p id="set-summary" class="hint"></p>
 <p class="hint">同じ部品の複数面を一組にできます。接合面は選択できません。別セットの面は保存時に移動します。残す・省略するは部品ごとに各1組です。</p>
-<label for="simplify-decision">簡略化の判断</label><select id="simplify-decision"><option value="pending">未確認</option><option value="keep">残す（エッジを参照）</option><option value="simplify">簡略化して残す（面を参照）</option><option value="omit">省略する（エッジを参照しない）</option></select>
+<label for="simplify-decision">簡略化の判断</label><select id="simplify-decision"><option value="pending">未確認</option><option value="keep">残す（面領域を保持）</option><option value="simplify">簡略化して残す（面を参照）</option><option value="omit">省略する（エッジを参照しない）</option></select>
 <div id="approximation-panel" hidden>
 <label for="set-policy">近似方針（任意）</label><select id="set-policy"><option value="unspecified">未指定・B3で検討</option><option value="preserve_volume">体積をできるだけ維持</option><option value="preserve_envelope">外形範囲をできるだけ維持</option></select>
 <label for="set-policy-notes">近似方針のメモ</label><textarea id="set-policy-notes" maxlength="4000" placeholder="近似時に優先したいこと"></textarea>
