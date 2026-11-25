@@ -182,6 +182,51 @@ uv pip install --python .\.venv\Scripts\python.exe PySide6-Essentials
 
 円筒対応はB2候補・レビュー・受け渡しまで。現行B3/B4の取付ブロック、B5の接合検査は平面取付を対象とし、円筒対応テンプレートや検査へ自動的に拡張されるものではない。複数面の接合グループ化、その他の曲面、寸法変更をまたぐ面追跡は後続で扱う。
 
+## B3の単一部品マルチエージェントワークフロー
+
+最初の実装は1部品を「進行役 → 作成担当 → チェッカー → 進行役の集約」で処理する。Python CLIはLLMを起動しない。進行役（Codexなど）が役割ごとの別エージェントに生成された指示ファイルを渡して呼び出し、成果物を回収する。将来の並列化はこのワークフローを部品ごとに実行する。役割のIDは別々に指定し、必要なら `--strategy` で戦略担当を割り当てる。
+
+B2の接合面全件判断・簡略化確定が前提。割当時と各段階で元レビューから受け渡しを再照合するため、未確定・変更済みレビューでは開始／再開しない。実機の判断を合成テストで代行しない。
+
+```powershell
+# 進行役：既存の出力CLIでB2受け渡しを出力してから、1部品を割り当てる
+& .\.venv\Scripts\python.exe .\b3_prepare.py .\b1-output .\b1-output\b3-input.json '1/1' .\b1-output\b3-workflow --candidates .\b1-output\contacts.json --review .\b1-output\review.json --simplification-review .\b1-output\review.simplification.json --coordinator coordinator-agent --worker creation-agent --checker check-agent
+# 担当：task.jsonとB1を読んで寸法・基準を計測し、plan.jsonを作成して呼び出す
+& .\.venv\Scripts\python.exe .\b3_build.py .\b1-output\b3-workflow\task.json .\b1-output\b3-workflow\plan.json .\b1-output\b3-workflow\attempt-001
+# 別のチェッカー：モデルを修正せず、新しいレポートに検査結果を記録する
+& .\.venv\Scripts\python.exe .\b3_check.py .\b1-output\b3-workflow\task.json .\b1-output\b3-workflow\attempt-001 .\b1-output\b3-workflow\check-001.json
+# 進行役：結果を照合・集約する。B4へは自動遷移しない
+& .\.venv\Scripts\python.exe .\b3_collect.py .\b1-output\b3-workflow\task.json .\b1-output\b3-workflow\attempt-001 .\b1-output\b3-workflow\check-001.json .\b1-output\b3-workflow\result-001.json
+```
+
+`task.json` は元B1、B2受け渡し、元レビューのハッシュ、対象の面セット、接合条件、元配置、担当IDを保持する。元の絶対座標で新規生成する。`coordinator.txt` / `worker.txt` / `checker.txt` は役割への指示で、担当とチェッカーは自分で相手の作業を兼ねない。役割IDの記録はOSのアクセス制御ではなく、進行役が実際に別エージェントへ割り振る。
+
+初期の `plan.json` は寸法付き箱・円筒の新規作成と和・差に対応する。各操作は `id`、`operation`（box/cylinder）、`combine`（先頭new、以降union/cut）、`parameters`、`frame`（origin_mm、x_direction、normal）、`source_faces`、`rationale` を指定する。boxの寸法はlength_mm/width_mm/height_mm、cylinderはradius_mm/height_mm。箱はXY中心・Z底面、円筒は軸中心・底面を原点にする。任意スケッチ、ロフト、自由曲面などは未対応として戦略担当へ返す。詳細ソリッドの読込・直接編集による作成はしない。
+
+```json
+{
+  "schema_version": 1,
+  "operations": [{
+    "id": "body", "operation": "box", "combine": "new",
+    "parameters": {"length_mm": 30, "width_mm": 20, "height_mm": 10},
+    "frame": {"origin_mm": [0,0,0], "x_direction": [1,0,0], "normal": [0,0,1]},
+    "source_faces": [["1/1", 1]],
+    "rationale": "残す面の位置・向きと計測寸法を基準に新規生成"
+  }],
+  "policy_checks": []
+}
+```
+
+担当は省略面を寸法・基準の参照に使わない。省略面と共有する辺は残す側の面を根拠として扱う。出力は単一の有効ソリッド、各操作後BREP、最終 `final.brep`、寸法と操作順を含む再生成用 `generated.py`、出所・ハッシュを持つ `artifact.json`。失敗時は完成品として保存せず、既存の試行を上書きしない。
+
+チェッカーは「残す」元トリム面領域が同じ向きの出力境界に含まれるか確認する。面を延長して元のエッジが変わることは許容する。初期の包含検査は平面・円筒面に対応し、未対応曲面は要レビュー。方針が体積維持なら `policy_checks` に `{ "set_id": "対象セットID", "scope": "whole_part", "max_volume_difference_mm3": 0.01 }`、外形範囲維持なら `max_envelope_difference_mm` を明示する。評価は元部品全体との比較で、セットの体積を推測しない。方針未指定・評価範囲／許容差未定義は要レビュー。自由文の方針メモも内容を報告して意味の確認を別途要求し、数値条件の通過だけで遵守済みとはしない。履歴形状は担当コードを実行せず、独立した限定プラン解釈で各操作を再生成して対称差を照合する。
+
+省略面が作成参照に含まれないことは機械検査するが、幾何フィーチャーの省略意図まで一般には証明できないため、人の確認事項として報告する。体積維持だけで合格とはしない。B3検査はB4のフィット到達度／適合やB5の空間検査を代替しない。チェッカー終了コードはok=0、ng/needs_review=2、入力・実行エラー=1。進行役の集約結果はchecked／return_to_worker／review_requiredとなる。NGは新しいattemptで担当へ差し戻す。
+
+```powershell
+& .\.venv\Scripts\python.exe -m unittest discover -s . -p 'test_b3_*.py'
+```
+
 ## B3の履歴付きテンプレートを生成する
 
 初期テンプレートの対象は平面で取り付けるブロック1種類。XY面を取付基準にし、本体を+Z方向に作り、上面から必要な貫通穴を空ける。元の詳細部品はB2の面参照を検証するために使用し、簡略ソリッドは入力寸法から新規生成する。現在の簡略化レベルは `default`。
@@ -296,3 +341,35 @@ B2の候補承認・差し替えはローカルWeb画面（または既存Qt/AIS
 Codexからは作業とチェックを別の呼び出しにし、ファイルで成果物を渡す。人による確認はAISで行い、保存した結果を後続工程で読む。最初の入力はSTEPとし、Parasolid直接入力は親の仕様にある検証項目として扱う。
 
 [CadQueryのインストール資料](https://cadquery.readthedocs.io/en/stable/installation.html) · [OCPの配布ファイル](https://pypi.org/project/cadquery-ocp/#files) · [OCCT AISの可視化ガイド](https://occt3d.com/dev/doc/overview/html/occt_user_guides__visualization.html)
+
+## ACPでPythonから役割エージェントを呼ぶ
+
+B3では不要な面・エッジ・フィーチャーを減らす。保持面の領域、接合、開口、指定された体積許容差を制約とする。保持面を延長してつなぎ、その幾何に必要な勾配を付ける。段差を残す場合は満たすべき制約と根拠を示す。作成担当は提出前に、同じ方法で数えた詳細・簡略形状の面数とエッジ数、および同じ視点と必要な断面で確認した所見を記録する。チェッカーは数と外観の所見を独立に確認し、確認できなかった項目を報告する。
+
+`b3_acp.py` はACP v1のJSON-RPC/UTF-8 NDJSON stdioで役割を呼び分ける。Kiro CLIの `kiro-cli acp` など、明示した実行ファイル引数配列を設定する。各呼出しは独立プロセス・セッションで、進行役→担当→チェッカー→進行役の順に1部品を処理する。担当が構造化JSONの寸法プランを返し、Python側が単一機能の作成・検査CLI相当の処理を呼ぶ。チェッカーの文章判断で機械検査NGや要レビューを合格へ上書きしない。
+
+設定JSONはschema_version=1、rolesのcoordinator/worker/checkerそれぞれに `argv: [実行ファイルの絶対パス, 引数...]` を持つ。任意の `model` はプロバイダーがsession/newで公開したIDだけを指定できる。シェル文字列や任意コマンドの自動許可は使わない。設定・認証・実CADの実行記録はGit管理外に置く。
+
+```powershell
+# 接続だけ検査（CADやタスクのプロンプトは送らない）
+& .\.venv\Scripts\python.exe .\b3_acp.py --probe .\b1-output\provider.json
+# 元レビューと設定を検証するだけ。エージェントは起動しない
+& .\.venv\Scripts\python.exe .\b3_acp.py .\b1-output\b3-workflow\task.json .\b1-output\provider.json .\b1-output\acp-run
+# 実際の役割呼出しと形状作成・検査
+& .\.venv\Scripts\python.exe .\b3_acp.py .\b1-output\b3-workflow\task.json .\b1-output\provider.json .\b1-output\acp-run --run
+```
+
+クライアントのファイル・ターミナル機能は広告せず、権限要求はキャンセルして停止・記録する。プロバイダー自身のツール制限は別設定であり、プロンプトや別セッションはOSサンドボックスを代替しない。最終進行役の後にも元レビューと成果物の改変を検査する。実行記録・モデルID・検査結果を保持し、タイムアウト／取消／不正応答／認証失敗を成功に見せない。プロトコル根拠：[ACP v1](https://agentclientprotocol.com/protocol/v1/transports)、[Kiro ACP](https://kiro.dev/docs/cli/acp/)。
+
+## FHなどの試行とB4–B6候補
+
+元レビューを変更せず、ユーザーから試行を委任された判断は別ファイルに `review_mode: provisional_trial` として記録する。これは人の最終承認ではない。Webレビューは `?part=配置ID` で対象部品へ絞れ、未承認の簡略化案を読取専用でプレビューできる。円錐・トーラスをC/R候補とする案は、小面しきい値による既存提案とは別のヒューリスティックで、形状意図を確定しない。`b2_propose_part.py bundle candidates review part_id output` で提案だけを新規保存できる。
+
+`b3_fh_build.py task dimensions output` は寸法付きFH試行テンプレートを新規生成する。実機寸法の既定値はコードに埋め込まない。長穴・穴・リング・ボス・ポケットを履歴付きで組み、C/Rは作成しない。特殊テンプレートの独立プラン再生は未対応としてB3で要レビューにする。
+
+- `b4_check_rebuild.py task artifact report --max-error-mm3 値`：保持面を含むフィット成立／到達度と、追加・減少空間の適合を分ける。非ゼロ差で最適フィット済みとは断定しない。
+- `b5_check_rebuild.py task artifact report`：元の絶対座標で平面・円筒の接合と全部品との食い込みを確認する。
+- `b5_build_rebuild_space.py task artifact config output`：明示した円筒内で詳細・再組立後の空間、増加・減少空間、成分数、微小面・辺を出力する。差分体積の保存則も照合し、不整合な生の差分値は信頼できる判定値に使わない。領域・外側埋め・漏れの期待値が未定義なら要レビューを残す。
+- `b6_create_candidate.py task artifact output --b3-report ... --b4-report ... --contact-report ... --space-report ... --space ...`：全証拠を束ねるB6候補。NGも隠さず保持し、`registered: false`、人の最終承認待ちとして保存する。既存の正式登録CLIの合格条件を緩めない。
+
+試行用の閾値と承認待ちはレポートに記録する。B4やB5がNGでも調査・比較用の成果物は作れるが、正式登録や本番解析への合格を意味しない。
