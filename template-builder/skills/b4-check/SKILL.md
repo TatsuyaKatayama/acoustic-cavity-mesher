@@ -35,3 +35,8 @@ Record the selected method and the attempts that failed. Sum per-solid volumes
 rather than relying on a single compound measurement when they disagree.
 Report the 5% numerical judgment and the visual judgment separately. If only
 some sections could be inspected, identify them and report the remaining scope.
+
+Record B4 technical status separately from human review. Mark fit OK when its
+geometric constraints are met. Report optimization evidence if available.
+Unevaluated optimization is informational. A B4 technical OK leaves human
+review pending and does not authorize registration.
