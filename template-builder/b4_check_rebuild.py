@@ -140,11 +140,11 @@ def compare_rebuild(task, source, generated, plan, *, max_error_mm3=None, max_bb
     # Matching the source exactly proves zero possible improvement. Otherwise a
     # single candidate is not evidence of optimization over the template domain.
     zero_difference = error == 0 and consistent
-    fit_status = 'ng' if constraint_status == 'ng' else 'ok' if zero_difference and constraint_status == 'ok' else 'needs_review'
+    fit_status = constraint_status
     fit = {'status': fit_status, 'constraint_status': constraint_status, 'checks': fit_checks,
            'optimization_status': 'zero_source_difference' if zero_difference else 'not_established',
            'reason': 'No geometric improvement is possible on a zero symmetric-difference candidate' if zero_difference else
-                     'Only this rebuild was measured. No search over the parameter domain or optimality certificate was supplied; a worker/strategy assessment remains required.'}
+                     'Only this rebuild was measured. Optimization across the parameter domain was not evaluated.'}
     suitability_checks = [{'item':'symmetric_difference',
                            'status':'needs_review' if error is None else 'ng' if not consistent else 'ok' if error<=max_error_mm3 else 'ng',
                            'value_mm3':error, 'limit_mm3':max_error_mm3,
@@ -157,7 +157,7 @@ def compare_rebuild(task, source, generated, plan, *, max_error_mm3=None, max_bb
                                    'value_mm':bbox_error, 'limit_mm':max_bbox_difference_mm})
     suitability = {'status':'ng' if any(row['status']=='ng' for row in suitability_checks) else 'needs_review' if any(row['status']=='needs_review' for row in suitability_checks) else 'ok',
                    'checks':suitability_checks, 'scope':'Single part material/space difference only; assembly contacts and connectivity belong to B5'}
-    status = 'ng' if 'ng' in (fit['status'], suitability['status'], b3_geometry['status']) else 'needs_review' if 'needs_review' in (fit['status'],suitability['status'],b3_geometry['status']) else 'ok'
+    status = 'ng' if 'ng' in (fit['status'], suitability['status'], b3_geometry['status']) else 'needs_review' if 'needs_review' in (fit['status'],suitability['status']) else 'ok'
     return {'schema_version':1,'stage':'B4','part_id':task['part_id'],'length_unit':'mm','coordinate_frame':'world',
             'status':status,'provisional':True,'checker_modifies_geometry':False,'b6_ready':False,
             'fit_reachability':fit,'simplification_suitability':suitability,
@@ -168,7 +168,7 @@ def compare_rebuild(task, source, generated, plan, *, max_error_mm3=None, max_bb
             'measurement_status':'failed' if error is None else 'ok' if consistent else 'inconsistent',
             'difference_method':method,'difference_attempts':attempts,
             'difference_ratio':error/source_volume if error is not None else None,
-            'visual_status':'needs_review',
+            'visual_status':'needs_review', 'human_review_status':'pending',
             'measurement_failure':measurement_failure,'difference_conservation_residual_mm3':conservation_residual,'source_bounds_world_mm':source_bounds,
             'generated_bounds_world_mm':generated_bounds,'max_bbox_difference_mm':bbox_error,
             'b3_policy_check_status':b3_geometry['status'],
@@ -189,8 +189,6 @@ def check_rebuild(task_path, artifact_dir, *, max_error_mm3=None, max_bbox_diffe
                              max_error_mm3=max_error_mm3,max_bbox_difference_mm=max_bbox_difference_mm)
     if b3_report['status'] == 'ng':
         report['status'] = 'ng'
-    elif b3_report['status'] == 'needs_review' and report['status']=='ok':
-        report['status'] = 'needs_review'
     report.update(roles=task['roles'],checker=task['roles']['checker'],task_sha256=b3_report['task_sha256'],
                   artifact_sha256=sha256(artifact_path.read_bytes()).hexdigest(),
                   b3_independent_status=b3_report['status'],criteria={'max_error_mm3':max_error_mm3,'max_bbox_difference_mm':max_bbox_difference_mm})

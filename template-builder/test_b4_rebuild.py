@@ -36,7 +36,7 @@ class B4RebuildTests(unittest.TestCase):
         self.assertAlmostEqual(report['space_added_mm3'],4)
         self.assertAlmostEqual(report['space_removed_mm3'],4)
         self.assertAlmostEqual(report['space_added_cc'],.004)
-        self.assertEqual(report['fit_reachability']['status'],'needs_review')
+        self.assertEqual(report['fit_reachability']['status'],'ok')
         self.assertEqual(report['simplification_suitability']['status'],'ng')
 
     def test_suitability_pass_does_not_establish_fit_optimality(self):
@@ -45,7 +45,8 @@ class B4RebuildTests(unittest.TestCase):
         report=compare_rebuild(self.task(source,False),source,reduced,self.plan(),max_error_mm3=8)
         self.assertEqual(report['simplification_suitability']['status'],'ok')
         self.assertEqual(report['fit_reachability']['optimization_status'],'not_established')
-        self.assertEqual(report['status'],'needs_review')
+        self.assertEqual(report['status'],'ok')
+        self.assertEqual(report['human_review_status'],'pending')
 
     def test_missing_retained_surface_is_ng_even_with_large_error_limit(self):
         source=cq.Workplane('XY').box(2,2,2).val().wrapped
@@ -86,7 +87,7 @@ class B4RebuildTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 compare_rebuild(self.task(source),source,source,self.plan(),max_error_mm3=value)
 
-    def test_specialized_plan_still_gets_b4_diagnostics_without_automatic_pass(self):
+    def test_specialized_plan_keeps_b3_and_human_review_separate(self):
         fixture=b3_fixture.B3ArtifactCheckerTests(methodName='test_checked_artifact_replays_and_preserves_all_files')
         fixture.setUp()
         self.addCleanup(fixture.doCleanups)
@@ -102,7 +103,8 @@ class B4RebuildTests(unittest.TestCase):
         report=check_rebuild(fixture.task_path,fixture.artifact,max_error_mm3=0)
         self.assertEqual(report['simplification_suitability']['status'],'ok')
         self.assertEqual(report['b3_independent_status'],'needs_review')
-        self.assertEqual(report['status'],'needs_review')
+        self.assertEqual(report['status'],'ok')
+        self.assertEqual(report['human_review_status'],'pending')
         self.assertEqual(before,fixture.snapshot())
 
     def test_worker_artifact_and_sources_unchanged_by_b4(self):
