@@ -1,0 +1,20 @@
+{
+  "name": "acoustic-cavity-mesher-local",
+  "interface": {
+    "displayName": "Acoustic Cavity Mesher"
+  },
+  "plugins": [
+    {
+      "name": "acoustic-cavity-mesher",
+      "source": {
+        "source": "local",
+        "path": "./plugins/acoustic-cavity-mesher"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    }
+  ]
+}

@@ -1,0 +1,7 @@
+{
+  "name": "acoustic-cavity-mesher",
+  "version": "0.1.0",
+  "description": "Run local CAD simplification, assembly review, and acoustic cavity checks from Codex.",
+  "requires_local_executor": true,
+  "skills": "./skills/"
+}

@@ -20,7 +20,7 @@
 ```powershell
 Set-Location .\template-builder
 uv venv --python 'C:\Program Files\Python311\python.exe' .venv
-uv pip install --python .\.venv\Scripts\python.exe cadquery
+uv pip install --python .\.venv\Scripts\python.exe -r requirements.txt
 & .\.venv\Scripts\python.exe -c "import cadquery as cq; from OCP.STEPCAFControl import STEPCAFControl_Reader; from OCP.AIS import AIS_Shape; print(cq.Workplane('XY').box(1, 1, 1).val().Volume())"
 ```
 
@@ -42,10 +42,11 @@ uv pip install --python .\.venv\Scripts\python.exe cadquery
 
 ## WebビューアでCADを開く
 
-通常のCAD閲覧とCodexの画像確認には、OCP Viewer（three-cad-viewer）を使う。Qtはこの用途には不要。工程Bの仮想環境で次のコマンドを実行する。
+通常のCAD閲覧とCodexの画像確認には、OCP Viewer（three-cad-viewer）を使う。
+セットアップ時にOCP ViewerとViewer Coreは導入済み。Qtはこの用途には不要。
+工程Bの仮想環境で次のコマンドを実行する。
 
 ```powershell
-uv pip install --python .\.venv\Scripts\python.exe ocp_viewer
 & .\.venv\Scripts\python.exe -m ocp_viewer --host 127.0.0.1 --port 3939
 ```
 

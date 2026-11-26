@@ -8,6 +8,7 @@ from urllib.parse import urlsplit
 import webbrowser
 
 from view_cad import load_model
+from viewer_licenses import viewer_licenses
 
 
 def render_data(left, right):
@@ -38,6 +39,7 @@ def handler_for(models):
     pages = {
         "/": ("text/html; charset=utf-8", (here / "compare_cad.html").read_bytes()),
         "/models.json": ("application/json", models),
+        "/viewer-licenses": ("text/plain; charset=utf-8", viewer_licenses()),
     }
     mime_types = {".css": "text/css", ".js": "text/javascript", ".png": "image/png"}
 

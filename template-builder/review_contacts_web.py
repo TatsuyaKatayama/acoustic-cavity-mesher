@@ -428,9 +428,11 @@ class ReviewSession:
 
 def handler_for(session, scene):
     from ocp_viewer import __file__ as viewer_module
+    from viewer_licenses import viewer_licenses
     assets = (Path(viewer_module).parent / "server" / "static").resolve()
     here = Path(__file__).resolve().parent
     scene_bytes = json.dumps(scene, separators=(",", ":")).encode()
+    licenses = viewer_licenses()
 
     class Handler(BaseHTTPRequestHandler):
         def reply(self, status, value, mime="application/json; charset=utf-8"):
@@ -480,6 +482,8 @@ def handler_for(session, scene):
                 elif path in ("/", "/review_contacts_web.js"):
                     name = "review_contacts_web.html" if path == "/" else path[1:]
                     self.reply(200, (here/name).read_bytes(), "text/html; charset=utf-8" if path == "/" else "text/javascript; charset=utf-8")
+                elif path == "/viewer-licenses":
+                    self.reply(200, licenses, "text/plain; charset=utf-8")
                 elif path.startswith("/assets/"):
                     asset = (assets/path.removeprefix("/assets/")).resolve()
                     mime = {".css": "text/css", ".js": "text/javascript", ".png": "image/png"}.get(asset.suffix)
