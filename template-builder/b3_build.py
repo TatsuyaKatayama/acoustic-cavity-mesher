@@ -108,8 +108,63 @@ def build_task(task, plan, output):
     """Write a reproducible worker artifact. Checking is a separate command."""
     from b3_task import validate_task
     validate_task(task)
-    output = Path(output)
     plan = validate_plan(task, plan)
+    return write_artifact(task, plan, output, generated_code(plan), build_history(plan))
+
+
+def build_python_task(task, plan, source, output):
+    """Package a reviewed, part-specific CadQuery script and its history."""
+    from b3_task import validate_task
+    validate_task(task)
+    if not isinstance(plan, dict) or not {"schema_version", "operations"} <= plan.keys() or plan.keys() - {"schema_version", "operations", "policy_checks"} or plan["schema_version"] != 1:
+        raise ValueError("Expected a schema 1 Python construction record")
+    if not isinstance(plan["operations"], list) or not plan["operations"] or not isinstance(plan.get("policy_checks", []), list):
+        raise ValueError("Expected nonempty operations and a list of policy checks")
+    allowed = {tuple(ref) for group in task["face_sets"] if group["decision"] in ("keep", "simplify") for ref in group["faces"]}
+    operations = {}
+    for entry in plan["operations"]:
+        if not isinstance(entry, dict) or set(entry) != {"id", "source_faces", "rationale"}:
+            raise ValueError("Each Python step needs id, source_faces and rationale")
+        identifier = entry["id"]
+        if not isinstance(identifier, str) or not identifier.strip() or identifier in operations:
+            raise ValueError("Python step IDs must be unique and nonempty")
+        if not isinstance(entry["rationale"], str) or not entry["rationale"].strip():
+            raise ValueError("Each step must explain the construction and its dimensional references")
+        refs = entry["source_faces"]
+        if not isinstance(refs, list) or any(not isinstance(ref, list) or len(ref) != 2
+                or ref[0] != task["part_id"] or type(ref[1]) is not int or tuple(ref) not in allowed for ref in refs):
+            raise ValueError("Python steps may reference only retained or simplified faces of this placement")
+        operations[identifier] = {**entry, "operation": "cadquery_python"}
+    record = {**plan, "operations": list(operations.values())}
+    source = Path(source)
+    code = source.read_bytes()
+    if Path(output).exists():
+        raise ValueError("Output already exists: " + str(output))
+    namespace = {"__name__": "b3_part_construction"}
+    exec(compile(code, str(source), "exec"), namespace)
+    builder = namespace.get("build_history")
+    if not callable(builder):
+        raise ValueError("Part script must define build_history()")
+
+    def history():
+        steps = iter(builder())
+        for identifier, operation in operations.items():
+            try:
+                actual_id, model = next(steps)
+            except StopIteration as exc:
+                raise ValueError("Missing Python history step: " + identifier) from exc
+            if actual_id != identifier:
+                raise ValueError("Python history step does not match construction record: " + identifier)
+            yield operation, model
+        end = object()
+        if next(steps, end) is not end:
+            raise ValueError("Unexpected extra Python history step")
+
+    return write_artifact(task, record, output, code, history())
+
+
+def write_artifact(task, plan, output, code, steps):
+    output = Path(output)
     if output.exists():
         raise ValueError("Output already exists: "+str(output))
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -117,15 +172,23 @@ def build_task(task, plan, output):
         work = Path(temporary)/"artifact"
         work.mkdir()
         history = []
-        for index, (operation, model) in enumerate(build_history(plan), 1):
-            data = brep_bytes(model.val().wrapped)
+        for index, (operation, model) in enumerate(steps, 1):
+            shape = model.val() if isinstance(model, cq.Workplane) else model
+            if not isinstance(shape, cq.Shape) or not shape.isValid() or len(shape.Solids()) != 1:
+                raise ValueError("History step must contain one valid solid: " + operation["id"])
+            volume = shape.Volume()
+            if not isfinite(volume) or volume <= 0:
+                raise ValueError("History step must have positive finite volume: " + operation["id"])
+            data = brep_bytes(shape.wrapped)
             name = f"history-{index:03d}.brep"
             (work/name).write_bytes(data)
             history.append({"operation_id": operation["id"], "geometry": name, "sha256": digest(data),
-                            "volume_mm3": model.val().Volume(), "source_faces": operation["source_faces"]})
-        final = brep_bytes(model.val().wrapped)
+                            "volume_mm3": volume, "source_faces": operation["source_faces"]})
+        if not history:
+            raise ValueError("Construction history is empty")
+        final = data
         (work/"final.brep").write_bytes(final)
-        code, task_data, plan_data = generated_code(plan), json_bytes(task), json_bytes(plan)
+        task_data, plan_data = json_bytes(task), json_bytes(plan)
         for name, data in (("generated.py", code), ("task.json", task_data), ("plan.json", plan_data)):
             (work/name).write_bytes(data)
         artifact = {"schema_version": 1, "stage": "B3", "status": "awaiting_check", "length_unit": "mm",
@@ -147,12 +210,17 @@ def main():
     parser.add_argument("task", type=Path)
     parser.add_argument("plan", type=Path)
     parser.add_argument("output", type=Path)
+    parser.add_argument("--python-source", type=Path,
+                        help="Execute a reviewed, trusted part-specific CadQuery script as local Python")
     args = parser.parse_args()
     try:
         from b3_task import load_task
-        artifact = build_task(load_task(args.task), json.loads(args.plan.read_text(encoding="utf-8")), args.output)
+        task = load_task(args.task)
+        plan = json.loads(args.plan.read_text(encoding="utf-8-sig"))
+        artifact = (build_task(task, plan, args.output) if args.python_source is None
+                    else build_python_task(task, plan, args.python_source, args.output))
         print(json.dumps({"status": artifact["status"], "part_id": artifact["part_id"], "output": str(args.output)}))
-    except (ValueError, OSError, KeyError, TypeError, RuntimeError) as exc:
+    except (ValueError, OSError, KeyError, TypeError, RuntimeError, SyntaxError) as exc:
         parser.exit(1, f"B3 build failed: {exc}\n")
 
 

@@ -66,12 +66,16 @@ def build_spaces(task_path,artifact_dir,config_path,output):
     if not report['difference_measurements_trusted']:
         report['status']='ng'
         report['pending_checks'].append('Resolve inconsistent boolean difference volumes; raw differences are diagnostic only')
-    from check_trial_space import small_features, check_probes
+    from check_trial_space import measure_space_features, check_probes
     from b5_geometry import solids
-    if 'min_face_area_mm2' in config and 'min_edge_length_mm' in config:
-        report['small_features_detailed'] = small_features(detailed, config)
-        report['small_features_rebuilt'] = small_features(simplified, config)
-        report['feature_thresholds'] = {key:config[key] for key in ('min_face_area_mm2','min_edge_length_mm')}
+    report['feature_measurements'] = {
+        'detailed': measure_space_features(detailed, config),
+        'rebuilt': measure_space_features(simplified, config),
+    }
+    if 'min_face_area_mm2' in config or 'min_edge_length_mm' in config:
+        report['small_features_detailed'] = report['feature_measurements']['detailed']['below_threshold']
+        report['small_features_rebuilt'] = report['feature_measurements']['rebuilt']['below_threshold']
+        report['feature_thresholds'] = {key:config[key] for key in ('min_face_area_mm2','min_edge_length_mm') if key in config}
         if report['small_features_rebuilt']:
             report['status'] = 'ng'
     if config.get('air_regions'):

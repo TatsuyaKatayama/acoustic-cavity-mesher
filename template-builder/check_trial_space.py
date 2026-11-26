@@ -5,19 +5,14 @@ from hashlib import sha256
 import json
 from pathlib import Path
 
-from OCP.BRep import BRep_Tool
 from OCP.BRepClass3d import BRepClass3d_SolidClassifier
-from OCP.BRepGProp import BRepGProp
-from OCP.GProp import GProp_GProps
 from OCP.gp import gp_Pnt
-from OCP.TopAbs import TopAbs_EDGE, TopAbs_FACE, TopAbs_IN, TopAbs_ON
-from OCP.TopExp import TopExp
-from OCP.TopoDS import TopoDS
-from OCP.TopTools import TopTools_IndexedMapOfShape
+from OCP.TopAbs import TopAbs_IN, TopAbs_ON
 
 from b2_faces import write_json
 from b4_geometry import GEOMETRY_TOL_MM, read_brep, read_record, volume
-from b5_geometry import cylinder, nonnegative, require_solids, solids, vector3
+from b5_geometry import cylinder, require_solids, solids, vector3
+from measure_features import measure_features
 
 
 def classify(classifier, point):
@@ -72,29 +67,12 @@ def check_probes(config, envelope, regions):
 
 
 def small_features(shape, config):
-    minimum_area = nonnegative(config["min_face_area_mm2"], "Minimum face area")
-    minimum_length = nonnegative(config["min_edge_length_mm"], "Minimum edge length")
-    issues = []
-    for kind, limit in ((TopAbs_FACE, minimum_area), (TopAbs_EDGE, minimum_length)):
-        if limit == 0:
-            continue
-        features = TopTools_IndexedMapOfShape()
-        TopExp.MapShapes_s(shape, kind, features)
-        for index in range(1, features.Extent() + 1):
-            feature = features.FindKey(index)
-            properties = GProp_GProps()
-            if kind == TopAbs_FACE:
-                BRepGProp.SurfaceProperties_s(feature, properties)
-                code, unit = "small_face", "mm2"
-            else:
-                if BRep_Tool.Degenerated_s(TopoDS.Edge_s(feature)):
-                    continue
-                BRepGProp.LinearProperties_s(feature, properties)
-                code, unit = "small_edge", "mm"
-            if properties.Mass() < limit:
-                issues.append({"code": code, "index": index, "value": properties.Mass(),
-                               "minimum": limit, "unit": unit})
-    return issues
+    return measure_space_features(shape, config)['below_threshold']
+
+
+def measure_space_features(shape, config):
+    return measure_features(shape, min_face_area_mm2=config.get('min_face_area_mm2'),
+                            min_edge_length_mm=config.get('min_edge_length_mm'))
 
 
 def check(config_path, space_path):
@@ -111,19 +89,21 @@ def check(config_path, space_path):
     regions = solids(shape)
     issues = []
     probes = []
+    features = None
     try:
         require_solids(shape, "trial air space")
     except ValueError:
         issues.append({"code": "invalid_or_empty_air_space"})
     else:
         probes, issues = check_probes(config, envelope, regions)
-        issues.extend(small_features(shape, config))
+        features = measure_space_features(shape, config)
+        issues.extend(features['below_threshold'])
     return {
         "schema_version": 1, "status": "ng" if issues else "ok",
         "space_record_sha256": space_record_digest,
         "space_sha256": record["geometry_sha256"], "config_sha256": digest,
         "component_volumes_cc": [volume(region) / 1000 for region in regions],
-        "air_probes": probes, "issues": issues,
+        "air_probes": probes, "issues": issues, "feature_measurements": features,
     }
 
 

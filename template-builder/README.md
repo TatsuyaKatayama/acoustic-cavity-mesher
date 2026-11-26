@@ -262,8 +262,8 @@ B2の接合面全件判断・簡略化確定が前提。割当時と各段階で
 ```powershell
 # 進行役：既存の出力CLIでB2受け渡しを出力してから、1部品を割り当てる
 & .\.venv\Scripts\python.exe .\b3_prepare.py .\b1-output .\b1-output\b3-input.json '1/1' .\b1-output\b3-workflow --candidates .\b1-output\contacts.json --review .\b1-output\review.json --simplification-review .\b1-output\review.simplification.json --coordinator coordinator-agent --worker creation-agent --checker check-agent
-# 担当：task.jsonとB1を読んで寸法・基準を計測し、plan.jsonを作成して呼び出す
-& .\.venv\Scripts\python.exe .\b3_build.py .\b1-output\b3-workflow\task.json .\b1-output\b3-workflow\plan.json .\b1-output\b3-workflow\attempt-001
+# LLM作成担当：task.jsonとB1から寸法を確認し、この配置のpart.pyとplan.jsonを作る
+& .\.venv\Scripts\python.exe .\b3_build.py .\b1-output\b3-workflow\task.json .\b1-output\b3-workflow\plan.json .\b1-output\b3-workflow\attempt-001 --python-source .\b1-output\b3-workflow\part.py
 # 別のチェッカー：モデルを修正せず、新しいレポートに検査結果を記録する
 & .\.venv\Scripts\python.exe .\b3_check.py .\b1-output\b3-workflow\task.json .\b1-output\b3-workflow\attempt-001 .\b1-output\b3-workflow\check-001.json
 # 進行役：結果を照合・集約する。B4へは自動遷移しない
@@ -272,7 +272,11 @@ B2の接合面全件判断・簡略化確定が前提。割当時と各段階で
 
 `task.json` は元B1、B2受け渡し、元レビューのハッシュ、対象の面セット、接合条件、元配置、担当IDを保持する。元の絶対座標で新規生成する。`coordinator.txt` / `worker.txt` / `checker.txt` は役割への指示で、担当とチェッカーは自分で相手の作業を兼ねない。役割IDの記録はOSのアクセス制御ではなく、進行役が実際に別エージェントへ割り振る。
 
-初期の `plan.json` は寸法付き箱・円筒の新規作成と和・差に対応する。各操作は `id`、`operation`（box/cylinder）、`combine`（先頭new、以降union/cut）、`parameters`、`frame`（origin_mm、x_direction、normal）、`source_faces`、`rationale` を指定する。boxの寸法はlength_mm/width_mm/height_mm、cylinderはradius_mm/height_mm。箱はXY中心・Z底面、円筒は軸中心・底面を原点にする。任意スケッチ、ロフト、自由曲面などは未対応として戦略担当へ返す。詳細ソリッドの読込・直接編集による作成はしない。
+標準の部品別手順では、LLM作成担当が配置ごとに `part.py` を書く。回転、スケッチ押し出し、ロフトなど必要なCadQuery操作を選び、承認済みの保持面・接合・開口と今回計測した寸法を使う。詳細CADの読み込みや直接編集は行わない。スクリプトの `build_history()` は工程ごとに `(step_id, model)` を返すジェネレーターで、各形状は絶対座標・mmの有効な単一ソリッドとする。対応する `plan.json` は `schema_version: 1` と `operations` を持ち、各工程に `id`、`source_faces`、`rationale` を記録する。
+
+`--python-source` は内容を確認済みのローカルPythonを作成工程で実行する。コードは `generated.py` として保存し、履歴とハッシュを検査に渡す。独立チェッカーは部品コードを実行せず、保存された形状・履歴とB2条件を検査する。独立リプレイの対象外であることは、フィット・外観・体積のB4判定とは別に記録する。
+
+既存の宣言型プランは `--python-source` を省略して実行できる。この場合は寸法付き箱・円筒の新規作成と和・差に対応する。以下は宣言型プランの例。
 
 ```json
 {
@@ -344,7 +348,53 @@ B2の接合面全件判断・簡略化確定が前提。割当時と各段階で
 
 照合はJSONを標準出力に出し、終了コードはOKが0、NGが2、入力・実行エラーが1。円筒側面が高さ全体にわたる貫通穴を1つ特定できる取付ブロックを対象とする。穴を一意に特定できない場合などは入力エラーを返す。
 
+## 微小面・微小辺の共通計測
+
+`measure_features.py` はBREPの最小面積と最短エッジ長を計測する。各最小値には、
+入力BREP内の1始まりの面またはエッジ番号と重心座標（mm）が付く。退化エッジは
+計測から除外し、件数を別途記録する。
+
+```powershell
+& .\.venv\Scripts\python.exe .\measure_features.py .\b1-output\model.brep
+```
+
+- **B2** の部品別・全体提案は各配置の詳細形状を `feature_measurements` に記録する。省略方針を確認するための情報で、既存の5 mm目安と面の保持・承認規則はそのまま使う。
+- **B4** の `b4_check_rebuild.py` は詳細形状と簡略形状について、同じ計測を `feature_measurements` に記録する。フィット・体積に加え、再生成で生じた微小形状を独立確認する。
+- **B5** は差し引き後の空間を計測する。判定に使う値は `space-config.json` の `min_face_area_mm2` と `min_edge_length_mm` で設定する。
+
+単体CLI、B2提案CLI、B4チェックCLIで `--min-face-area-mm2` または
+`--min-edge-length-mm` を指定すると、その値を下回る面・エッジも列挙する。
+省略時は最小値を計測し、しきい値による抽出は行わない。B2・B4の該当一覧は確認用。
+
+短辺と、その辺を含む面を確認するには `view_short_edges.py` を使う。
+指定長**以下**の非退化エッジと、それを含む面のBREP内番号をJSONに出力する。
+`--port 0` を付けるとローカル比較ビューで該当面を橙に着色する。
+
+```powershell
+& .\.venv\Scripts\python.exe .\view_short_edges.py .\b1-output\model.brep --edge-limit-mm 5 --port 0
+```
+
 ## B5の再組み立てと空間検証
+
+1. **B5.1** は配置・向き、接合、開口と干渉を確認する。干渉は詳細形状での有無と簡略化後の共通体積を記録し、意図した充填や摺動部を含めて必要な箇所は人が判断する。
+2. **B5.2** は確認済みの配置から空間を抽出する。まず個別ソリッドを一括で差し引き、必要な場合は対象の組だけの融合を試す。有効な空間、外部への漏れ、連通、孤立成分、微小面・短辺を確認する。短辺の確認には、空間側ID、隣接面の由来、交差する部品や円筒・境界工具を記録する。由来の確認にはブーリアン履歴と境界計測を用い、未特定の箇所は明記する。
+3. **B5.3** は短辺などの修正候補を別に保存する。修正前後の体積変化を計測し、B5.2の差分を再実行して同じ条件で検証する。配置や接合条件が変わるときはB5.1へ戻る。
+
+短辺と微小面の目安は対象のメッシュ条件またはレビュー指示で決める。部品の省略候補を選ぶB2の5 mm目安とは別に扱う。
+
+配置済みの2つのBREPを一体化できるかは `check_same_domain.py` で試行する。
+単一ソリッドとして融合できるかと、両部品に由来する面を同一支持面として
+まとめられたかを別々に記録する。入力は同じ絶対座標系で指定する。
+
+```powershell
+& .\.venv\Scripts\python.exe .\check_same_domain.py .\a.brep .\b.brep --report .\b1-output\fusion-check.json
+```
+
+`--trial-brep` を指定した場合は、有効な単一ソリッドになった試行形状を新規保存する。
+
+下記の既存CLIは単一部品を置き換える試行用。アセンブリ全体を検証するときは、
+選択済みの簡略形状を全配置で使い、詳細側と簡略側の対応、入力ハッシュ、
+干渉・連通・修正の記録をケース成果物として保存する。
 
 B1の元配置とB4の絶対座標BREPを使い、対象部品1つを簡略形状に置き換える。ほかの部品はB1の形状・配置を使う。接合面はB2から引き継いだ参照で照合し、正を隙間、負を食い込みとして記録する。重なり面積は元の詳細面ペアに対する比で判定し、対象部品と周辺部品のソリッド同士の食い込み体積も確認する。
 

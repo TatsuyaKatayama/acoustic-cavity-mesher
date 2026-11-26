@@ -15,6 +15,7 @@ from OCP.BRepCheck import BRepCheck_Analyzer
 from b2_faces import load_parts
 from b3_check import check_task, check_geometry, read_brep, measure, checked_path, indexed
 from b3_task import load_task
+from measure_features import measure_features
 from propose_contacts import bounds
 
 
@@ -95,8 +96,10 @@ def measure_with_fallback(source, generated, source_volume, generated_volume, to
         return None, None, attempts
 
 
-def compare_rebuild(task, source, generated, plan, *, max_error_mm3=None, max_bbox_difference_mm=None):
+def compare_rebuild(task, source, generated, plan, *, max_error_mm3=None, max_bbox_difference_mm=None, feature_limits=None):
     """Separate fit reachability from whether the produced geometry is sufficient."""
+    features = {label: measure_features(shape, **(feature_limits or {}))
+                for label, shape in (('detailed', source), ('rebuilt', generated))}
     use_fallback = max_error_mm3 is None
     if not use_fallback:
         max_error_mm3 = positive_limit(max_error_mm3, 'max_error_mm3')
@@ -159,7 +162,8 @@ def compare_rebuild(task, source, generated, plan, *, max_error_mm3=None, max_bb
                    'checks':suitability_checks, 'scope':'Single part material/space difference only; assembly contacts and connectivity belong to B5'}
     status = 'ng' if 'ng' in (fit['status'], suitability['status'], b3_geometry['status']) else 'needs_review' if 'needs_review' in (fit['status'],suitability['status']) else 'ok'
     return {'schema_version':1,'stage':'B4','part_id':task['part_id'],'length_unit':'mm','coordinate_frame':'world',
-            'status':status,'provisional':True,'checker_modifies_geometry':False,'b6_ready':False,
+        'status':status,'provisional':True,'checker_modifies_geometry':False,'b6_ready':False,
+        'feature_measurements':features,
             'fit_reachability':fit,'simplification_suitability':suitability,
             'space_added_mm3':space_added,'space_removed_mm3':space_removed,
             'space_added_cc':space_added/1000 if space_added is not None else None,'space_removed_cc':space_removed/1000 if space_removed is not None else None,
@@ -177,7 +181,7 @@ def compare_rebuild(task, source, generated, plan, *, max_error_mm3=None, max_bb
                            'B5 assembly gaps/interference, openings/connectivity and final human review remain separate gates.']}
 
 
-def check_rebuild(task_path, artifact_dir, *, max_error_mm3=None, max_bbox_difference_mm=None):
+def check_rebuild(task_path, artifact_dir, *, max_error_mm3=None, max_bbox_difference_mm=None, feature_limits=None):
     task_path, artifact_dir = Path(task_path),Path(artifact_dir)
     task = load_task(task_path)
     b3_report = check_task(task_path,artifact_dir)
@@ -186,7 +190,8 @@ def check_rebuild(task_path, artifact_dir, *, max_error_mm3=None, max_bbox_diffe
     plan = json.loads(checked_path(artifact_dir,'plan.json').read_text(encoding='utf-8'))
     _, parts = load_parts(Path(task['bundle']))
     report = compare_rebuild(task,parts[task['part_id']][0],read_brep(checked_path(artifact_dir,artifact['geometry'])),plan,
-                             max_error_mm3=max_error_mm3,max_bbox_difference_mm=max_bbox_difference_mm)
+                             max_error_mm3=max_error_mm3,max_bbox_difference_mm=max_bbox_difference_mm,
+                             feature_limits=feature_limits)
     if b3_report['status'] == 'ng':
         report['status'] = 'ng'
     report.update(roles=task['roles'],checker=task['roles']['checker'],task_sha256=b3_report['task_sha256'],
@@ -202,11 +207,15 @@ def main():
     parser.add_argument('report',type=Path)
     parser.add_argument('--max-error-mm3',type=float,help='Legacy direct-only absolute limit. Omit to use the B4 fallback sequence and 5% criterion.')
     parser.add_argument('--max-bbox-difference-mm',type=float)
+    parser.add_argument('--min-face-area-mm2',type=float)
+    parser.add_argument('--min-edge-length-mm',type=float)
     args=parser.parse_args()
     try:
         if args.report.exists() or args.report.resolve().is_relative_to(args.artifact.resolve()):
             raise ValueError('Write a new checker report outside the worker artifact directory')
-        report=check_rebuild(args.task,args.artifact,max_error_mm3=args.max_error_mm3,max_bbox_difference_mm=args.max_bbox_difference_mm)
+        report=check_rebuild(args.task,args.artifact,max_error_mm3=args.max_error_mm3,max_bbox_difference_mm=args.max_bbox_difference_mm,
+                             feature_limits={'min_face_area_mm2':args.min_face_area_mm2,
+                                             'min_edge_length_mm':args.min_edge_length_mm})
         args.report.parent.mkdir(parents=True,exist_ok=True)
         args.report.write_text(json.dumps(report,indent=2,ensure_ascii=False)+'\n',encoding='utf-8')
         print(json.dumps(report,ensure_ascii=False))

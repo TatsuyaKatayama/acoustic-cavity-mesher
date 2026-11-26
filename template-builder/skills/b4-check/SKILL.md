@@ -31,6 +31,11 @@ Preserve the inputs. Save a separate report naming the candidate and evidence.
    judgment. A pass on the numerical criterion alone does not complete B4.
    Report the two B4 judgments and stop before B5.
 
+Use the B4 report's feature measurements to compare minimum face area and
+minimum nondegenerate edge length before and after simplification. Report
+the face or edge indices and any features below explicitly specified limits.
+Use the measured values as evidence even if no limits were specified.
+
 Record the selected method and the attempts that failed. Sum per-solid volumes
 rather than relying on a single compound measurement when they disagree.
 Report the 5% numerical judgment and the visual judgment separately. If only

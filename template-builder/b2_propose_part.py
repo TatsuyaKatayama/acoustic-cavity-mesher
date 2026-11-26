@@ -9,17 +9,18 @@ from OCP.TopoDS import TopoDS
 from b2_faces import load_scene
 from b2_review import open_review
 from b2_sets import surface_reference
+from measure_features import measure_features
 from review_contacts_web import measure_pair
 
 
-def propose_part(bundle,candidates,review,part_id,*,rule_store=None,rule_family=None):
+def propose_part(bundle,candidates,review,part_id,*,rule_store=None,rule_family=None,feature_limits=None):
     digest,parts,nodes=load_scene(Path(bundle))
     if part_id not in parts:raise ValueError('Unknown part')
     _,draft=open_review(digest,parts,Path(candidates),Path(review))
-    return _propose_part(digest,parts,nodes,Path(candidates),Path(review),draft,part_id,bundle=bundle,rule_store=rule_store,rule_family=rule_family)
+    return _propose_part(digest,parts,nodes,Path(candidates),Path(review),draft,part_id,bundle=bundle,rule_store=rule_store,rule_family=rule_family,feature_limits=feature_limits)
 
 
-def _propose_part(digest,parts,nodes,candidates,review,draft,part_id,*,bundle=None,rule_store=None,rule_family=None):
+def _propose_part(digest,parts,nodes,candidates,review,draft,part_id,*,bundle=None,rule_store=None,rule_family=None,feature_limits=None):
     from b2_part_rules import find_rules, DEFAULT_STORE
     policies=find_rules(bundle,part_id,rule_store if rule_store is not None else DEFAULT_STORE,family=rule_family)
     overrides={}
@@ -73,6 +74,7 @@ def _propose_part(digest,parts,nodes,candidates,review,draft,part_id,*,bundle=No
         'review_sha256':sha256(Path(review).read_bytes()).hexdigest() if Path(review).exists() else 'new',
         'part_name':next(n.get('definition_name') or n['name'] for n in nodes if n['id']==part_id),
         'contacts':contacts,'faces':faces,'proposed_sets':[g for g in groups if g['faces']],
+        'feature_measurements':measure_features(parts[part_id][0], **(feature_limits or {})),
         'summary':{d:sum(r['suggestion']==d for r in faces) for d in ('keep','simplify','omit')},
         'human_questions':questions,
         'part_rules':policies,
@@ -84,12 +86,12 @@ def _propose_part(digest,parts,nodes,candidates,review,draft,part_id,*,bundle=No
         'review_rule':'まず部品ごとの三分類案と理由を提示し、変更箇所・迷う箇所を人が判断する。未確定の接合候補は仮保護する。提案はレビュー保存・承認を変更せず、B3受け渡しには使用できない。'}
 
 
-def propose_assembly(bundle,candidates,review,*,rule_store=None,rule_family=None):
+def propose_assembly(bundle,candidates,review,*,rule_store=None,rule_family=None,feature_limits=None):
     """One advisory B2 operation; no review decisions or CAD are modified."""
     candidates,review=Path(candidates),Path(review)
     digest,parts,nodes=load_scene(Path(bundle))
     _,draft=open_review(digest,parts,candidates,review)
-    proposals=[_propose_part(digest,parts,nodes,candidates,review,draft,pid,bundle=bundle,rule_store=rule_store,rule_family=rule_family) for pid in parts]
+    proposals=[_propose_part(digest,parts,nodes,candidates,review,draft,pid,bundle=bundle,rule_store=rule_store,rule_family=rule_family,feature_limits=feature_limits) for pid in parts]
     return {'schema_version':1,'stage':'B2_assembly_proposal','approved':False,
         'manifest_sha256':digest,'candidates_sha256':sha256(candidates.read_bytes()).hexdigest(),
         'review_sha256':sha256(review.read_bytes()).hexdigest() if review.exists() else 'new',
@@ -106,10 +108,13 @@ def main():
     for name in ('bundle','candidates','review','part_id','output'):p.add_argument(name,type=str if name=='part_id' else Path)
     p.add_argument('--rule-store',type=Path)
     p.add_argument('--rule-family',help='Explicit family key; exact geometry rules are loaded automatically')
+    p.add_argument('--min-face-area-mm2',type=float)
+    p.add_argument('--min-edge-length-mm',type=float)
     a=p.parse_args()
     try:
         if a.output.exists():raise ValueError('Output already exists')
-        options=dict(rule_store=a.rule_store,rule_family=a.rule_family)
+        options=dict(rule_store=a.rule_store,rule_family=a.rule_family,feature_limits={
+            'min_face_area_mm2':a.min_face_area_mm2, 'min_edge_length_mm':a.min_edge_length_mm})
         proposal=propose_assembly(a.bundle,a.candidates,a.review,**options) if a.part_id=='all' else propose_part(a.bundle,a.candidates,a.review,a.part_id,**options)
         a.output.parent.mkdir(parents=True,exist_ok=True)
         a.output.write_text(json.dumps(proposal,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
