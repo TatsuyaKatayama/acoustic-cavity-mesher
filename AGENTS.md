@@ -1,7 +1,8 @@
 # Repository agent instructions
 
 Keep detailed CAD, review data, and generated artifacts outside version control.
-Use the project virtual environment at `template-builder/.venv/Scripts/python.exe`.
+Use the project virtual environment at `.venv/Scripts/python.exe`.
+Existing checkouts may use `template-builder/.venv/Scripts/python.exe`.
 
 For independent geometry validation, assign a checker separate from the author. Follow the repository's
 [independent checker role](templates/profile/agents/b4-checker/AGENT.md), which declares its skills.

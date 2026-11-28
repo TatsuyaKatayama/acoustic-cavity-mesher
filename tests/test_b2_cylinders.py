@@ -1,7 +1,7 @@
 """Independent geometry regressions for B2 planar/cylindrical contact proposals.
 
-Run with the template-builder virtual environment: python -m unittest discover
--s template-builder -p test_b2_cylinders.py -v.
+Run with the project virtual environment and tools on PYTHONPATH: python -m unittest discover
+-s tests -p test_b2_cylinders.py -v.
 """
 
 import math

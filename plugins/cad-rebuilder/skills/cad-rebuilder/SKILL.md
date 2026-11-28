@@ -1,6 +1,6 @@
 ---
-name: acoustic-cavity-mesher
-description: Use the acoustic-cavity-mesher project to inspect STEP or BREP files, run CAD simplification and assembly or cavity checks, measure short edges, and open CAD views in Codex. Use for this project's CAD simplification and validation workflow.
+name: cad-rebuilder
+description: Use the cad-rebuilder project to inspect STEP or BREP files, run CAD simplification and assembly or cavity checks, measure short edges, and open CAD views in Codex. Use for this project's CAD simplification and validation workflow.
 ---
 
 Run in the user's CAD Rebuilder checkout. Locate the repository
@@ -8,10 +8,11 @@ from the active workspace and verify it contains `docs/cad-workflow.md`
 and `SPEC.md`. Run tools from the checkout, since the installed plugin skill
 is cached separately. Read the checkout's `AGENTS.md` and the section of
 `docs/cad-workflow.md` for the requested operation. Use
-`template-builder/.venv/Scripts/python.exe` on Windows. If it is missing, use
+`.venv/Scripts/python.exe` on Windows. If it is missing, use
 the setup section of the root README. Run `tools/workspace.py init` with
 that interpreter before reading local role definitions. Run CAD command
 scripts from `tools/` with the repository root as the working directory.
+Existing checkouts may use `template-builder/.venv/Scripts/python.exe`.
 
 - Extract part placements and independently check them against the source STEP.
 - Propose simplifications and contact rules. Use the combined part review
