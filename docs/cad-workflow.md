@@ -15,13 +15,13 @@
 
 ## Windowsでの手動セットアップ
 
-導入済みの `uv` を使用する。PowerShellで、カレントディレクトリが親の `like3d` の場合に以下を実行する。
+導入済みの `uv` を使用する。PowerShellで、カレントディレクトリが親の `cad-rebuilder` の場合に以下を実行する。
 
 ```powershell
 
 uv venv --python 'C:\Program Files\Python311\python.exe' .venv
-uv pip install --python .\template-builder\.venv\Scripts\python.exe -r requirements.txt
-& .\template-builder\.venv\Scripts\python.exe -c "import cadquery as cq; from OCP.STEPCAFControl import STEPCAFControl_Reader; from OCP.AIS import AIS_Shape; print(cq.Workplane('XY').box(1, 1, 1).val().Volume())"
+uv pip install --python .\.venv\Scripts\python.exe -r requirements.txt
+& .\.venv\Scripts\python.exe -c "import cadquery as cq; from OCP.STEPCAFControl import STEPCAFControl_Reader; from OCP.AIS import AIS_Shape; print(cq.Workplane('XY').box(1, 1, 1).val().Volume())"
 ```
 
 最後のコマンドで単位立方体の体積（およそ1）が出れば、基本の形状生成とXDE・AISモジュールの読み込みを確認できる。AISの描画と面選択は、GUI試作時にWindowsの対話セッションで確認する。
@@ -31,8 +31,8 @@ uv pip install --python .\template-builder\.venv\Scripts\python.exe -r requireme
 リポジトリのルート で実行する。抽出担当が最初のコマンドを実行し、抽出チェッカーが元のSTEPと出力ディレクトリを受け取って、別のコマンドで照合する。
 
 ```powershell
-& .\template-builder\.venv\Scripts\python.exe .\tools\extract_assembly.py .\machine.step .\b1-output
-& .\template-builder\.venv\Scripts\python.exe .\tools\check_assembly.py .\machine.step .\b1-output
+& .\.venv\Scripts\python.exe .\tools\extract_assembly.py .\machine.step .\b1-output
+& .\.venv\Scripts\python.exe .\tools\check_assembly.py .\machine.step .\b1-output
 ```
 
 - 抽出には新しい出力ディレクトリ名を指定する。`assembly.json` に配置ごとのID、親ID、名前、親基準と全体基準の変換行列を記録する。`parts/` のBREPは部品ローカル座標で保存し、同一のBREPは複数配置から参照できる。
@@ -47,13 +47,13 @@ uv pip install --python .\template-builder\.venv\Scripts\python.exe -r requireme
 CADツールの仮想環境で次のコマンドを実行する。
 
 ```powershell
-& .\template-builder\.venv\Scripts\python.exe -m ocp_viewer --host 127.0.0.1 --port 3939
+& .\.venv\Scripts\python.exe -m ocp_viewer --host 127.0.0.1 --port 3939
 ```
 
 [ローカルビューア](http://127.0.0.1:3939)をブラウザで開き、別のPowerShellからモデルを送る。
 
 ```powershell
-& .\template-builder\.venv\Scripts\python.exe .\tools\view_cad.py ..\test-data\rotary-compressor-test.step --png .\b1-output\compressor.png
+& .\.venv\Scripts\python.exe .\tools\view_cad.py ..\test-data\rotary-compressor-test.step --png .\b1-output\compressor.png
 ```
 
 STEPアセンブリと絶対座標のBREPを表示できる。PNG保存にはビューアに接続したブラウザが必要。画像確認はCodexがPNGを読み、定量判定には従来のOCCT計測結果を使う。レビューの面参照・判断の保存には、下記の専用Webレビュー画面を使う。
@@ -65,7 +65,7 @@ STEPアセンブリと絶対座標のBREPを表示できる。PNG保存にはビ
 各ビューの「ID確認」を押し、面やエッジをクリックすると、部品パスと選択要素のIDが表示される。選択フィルターで面またはエッジに絞り込める。表示IDは読み込んだモデル内でのビューアの参照番号で、STEPファイルの `#番号` や抽出データの形状番号とは別に扱う。
 
 ```powershell
-& .\template-builder\.venv\Scripts\python.exe .\tools\compare_cad.py .\b1-output\comparison\detailed.brep .\b1-output\comparison\simplified.brep
+& .\.venv\Scripts\python.exe .\tools\compare_cad.py .\b1-output\comparison\detailed.brep .\b1-output\comparison\simplified.brep
 ```
 
 既定のURLは [比較画面](http://127.0.0.1:3940/)。比較画面はインストール済みのthree-cad-viewerを2つ埋め込む。形状変換では OCP Viewer Core の内部オフラインAPIを使うため、更新時は互換性を確認する。動作確認済みの組み合わせは `ocp-viewer 1.3.0` と `ocp-viewer-core 1.2.0`。
@@ -79,8 +79,8 @@ STEPアセンブリと絶対座標のBREPを表示できる。PNG保存にはビ
 候補生成と人の承認は別の操作にする。リポジトリのルート で実行する。
 
 ```powershell
-& .\template-builder\.venv\Scripts\python.exe .\tools\propose_contacts.py .\b1-output .\b1-output\contacts.json --max-gap-mm 0.1 --min-overlap-mm2 0.01
-& .\template-builder\.venv\Scripts\python.exe .\tools\review_contacts_web.py .\b1-output .\b1-output\contacts.json .\b1-output\review.json
+& .\.venv\Scripts\python.exe .\tools\propose_contacts.py .\b1-output .\b1-output\contacts.json --max-gap-mm 0.1 --min-overlap-mm2 0.01
+& .\.venv\Scripts\python.exe .\tools\review_contacts_web.py .\b1-output .\b1-output\contacts.json .\b1-output\review.json
 ```
 
 既定URLは [Webレビュー](http://127.0.0.1:3941/)。`--port` でポートを変更でき、`--no-browser` ならサーバーだけを起動する。CodexのタブでもこのURLを開ける。Pythonプロセスを起動したまま使い、終了はCtrl+C。通常の比較・断面画面（3940）とは別サーバー。
@@ -113,9 +113,9 @@ TOPから配置順に最初から色分けして表示し、左の「承認し�
 ルールは1回のレビュー出力とは独立しているため、別の試行でも蓄積した判断を参照できる。
 
 ```powershell
-& .\template-builder\.venv\Scripts\python.exe .\tools\b2_part_rules.py save --bundle .\b1-output\case --part '1/1' --policy .\b1-output\policy.json
-& .\template-builder\.venv\Scripts\python.exe .\tools\b2_part_rules.py show --bundle .\b1-output\case --part '1/1'
-& .\template-builder\.venv\Scripts\python.exe .\tools\b2_part_rules.py list
+& .\.venv\Scripts\python.exe .\tools\b2_part_rules.py save --bundle .\b1-output\case --part '1/1' --policy .\b1-output\policy.json
+& .\.venv\Scripts\python.exe .\tools\b2_part_rules.py show --bundle .\b1-output\case --part '1/1'
+& .\.venv\Scripts\python.exe .\tools\b2_part_rules.py list
 ```
 
 policy.jsonには `instruction`（原文）、`interpretation`（target/action/reasonを持つ配列）、
@@ -154,7 +154,7 @@ Web画面の「簡略化案を色で見る」は全体または選択部品の�
 抽出したBREPの面参照であり、選択のたびに表示を置き換える。提案を見るだけでは判断を変更しない。
 
 ```powershell
-& .\template-builder\.venv\Scripts\python.exe .\tools\b2_propose_part.py .\b1-output .\b1-output\contacts.json .\b1-output\review.json all .\b1-output\simplification-proposal.json
+& .\.venv\Scripts\python.exe .\tools\b2_propose_part.py .\b1-output .\b1-output\contacts.json .\b1-output\review.json all .\b1-output\simplification-proposal.json
 ```
 
 `all` は全配置を含む提案であり、各配置の接合条件は別々に記録する。
@@ -193,7 +193,7 @@ Web画面の「簡略化案を色で見る」は全体または選択部品の�
 画面を使わず削除提案だけを作る場合は、単一機能CLIを使う。接合面レビューが完了している必要がある。新しい出力ファイルを指定し、Webサーバーの `--simplification-review` にそのパスを渡してレビューする。
 
 ```powershell
-& .\template-builder\.venv\Scripts\python.exe .\tools\propose_simplification.py .\b1-output .\b1-output\contacts.json .\b1-output\review.json .\b1-output\review.simplification.json --threshold-mm 5
+& .\.venv\Scripts\python.exe .\tools\propose_simplification.py .\b1-output .\b1-output\contacts.json .\b1-output\review.json .\b1-output\review.simplification.json --threshold-mm 5
 ```
 
 three-cad-viewerの変換は `ocp-viewer-core` の内部オフラインAPIを使うため、更新時は明示的面対応と表示を再検証する。検証済みのバージョンは上記比較画面と同じ。
@@ -203,8 +203,8 @@ three-cad-viewerの変換は `ocp-viewer-core` の内部オフラインAPIを使
 Windowsの対話セッションで、抽出したCADをOCCT AISに表示する。Qtの依存は同じ仮想環境に入れる。
 
 ```powershell
-uv pip install --python .\template-builder\.venv\Scripts\python.exe PySide6-Essentials
-& .\template-builder\.venv\Scripts\python.exe .\tools\review_faces.py .\b1-output .\b1-output\face-pair.json
+uv pip install --python .\.venv\Scripts\python.exe PySide6-Essentials
+& .\.venv\Scripts\python.exe .\tools\review_faces.py .\b1-output .\b1-output\face-pair.json
 ```
 
 異なる部品の面を左クリックで1面ずつ選ぶと、両面がオレンジ色になる。「保存」を押してから同じコマンドで開くと、選択した面ペアを再表示する。
@@ -223,8 +223,8 @@ uv pip install --python .\template-builder\.venv\Scripts\python.exe PySide6-Esse
 ### 接合面候補を自動提案する
 
 ```powershell
-& .\template-builder\.venv\Scripts\python.exe .\tools\propose_contacts.py .\b1-output .\b1-output\contacts.json --max-gap-mm 0.1 --min-overlap-mm2 0.01
-& .\template-builder\.venv\Scripts\python.exe .\tools\review_faces.py .\b1-output .\b1-output\face-pair.json --candidates .\b1-output\contacts.json
+& .\.venv\Scripts\python.exe .\tools\propose_contacts.py .\b1-output .\b1-output\contacts.json --max-gap-mm 0.1 --min-overlap-mm2 0.01
+& .\.venv\Scripts\python.exe .\tools\review_faces.py .\b1-output .\b1-output\face-pair.json --candidates .\b1-output\contacts.json
 ```
 
 しきい値は例。対象モデルに合わせて、最大隙間をmm、最小重なり面積をmm²で指定する。候補は別部品の向かい合う面で、次を対象にする。辺・点だけの接触と食い込みは除外する。
@@ -239,10 +239,10 @@ uv pip install --python .\template-builder\.venv\Scripts\python.exe PySide6-Esse
 ### 複数候補をレビューして作成担当へ渡す
 
 ```powershell
-& .\template-builder\.venv\Scripts\python.exe .\tools\review_contacts.py .\b1-output .\b1-output\contacts.json .\b1-output\review.json
+& .\.venv\Scripts\python.exe .\tools\review_contacts.py .\b1-output .\b1-output\contacts.json .\b1-output\review.json
 # 接合面の判断後、Web画面の「2 簡略化」で判断を保存・確定する
-& .\template-builder\.venv\Scripts\python.exe .\tools\review_contacts_web.py .\b1-output .\b1-output\contacts.json .\b1-output\review.json
-& .\template-builder\.venv\Scripts\python.exe .\tools\export_template_inputs.py .\b1-output .\b1-output\contacts.json .\b1-output\review.json .\b1-output\b3-input.json
+& .\.venv\Scripts\python.exe .\tools\review_contacts_web.py .\b1-output .\b1-output\contacts.json .\b1-output\review.json
+& .\.venv\Scripts\python.exe .\tools\export_template_inputs.py .\b1-output .\b1-output\contacts.json .\b1-output\review.json .\b1-output\b3-input.json
 ```
 
 - AISの候補一覧から1件選択し、未確認・採用・除外を指定する。面が違う場合は差し替える側を選んでCAD面をクリックする。一覧の隙間と重なり面積は提案時の値。
@@ -262,13 +262,13 @@ uv pip install --python .\template-builder\.venv\Scripts\python.exe PySide6-Esse
 
 ```powershell
 # 進行役：既存の出力CLIでレビュー受け渡しを出力してから、1部品を割り当てる
-& .\template-builder\.venv\Scripts\python.exe .\tools\b3_prepare.py .\b1-output .\b1-output\b3-input.json '1/1' .\b1-output\b3-workflow --candidates .\b1-output\contacts.json --review .\b1-output\review.json --simplification-review .\b1-output\review.simplification.json --coordinator coordinator-agent --worker creation-agent --checker check-agent
+& .\.venv\Scripts\python.exe .\tools\b3_prepare.py .\b1-output .\b1-output\b3-input.json '1/1' .\b1-output\b3-workflow --candidates .\b1-output\contacts.json --review .\b1-output\review.json --simplification-review .\b1-output\review.simplification.json --coordinator coordinator-agent --worker creation-agent --checker check-agent
 # LLM作成担当：task.jsonと抽出データから寸法を確認し、この配置のpart.pyとplan.jsonを作る
-& .\template-builder\.venv\Scripts\python.exe .\tools\b3_build.py .\b1-output\b3-workflow\task.json .\b1-output\b3-workflow\plan.json .\b1-output\b3-workflow\attempt-001 --python-source .\b1-output\b3-workflow\part.py
+& .\.venv\Scripts\python.exe .\tools\b3_build.py .\b1-output\b3-workflow\task.json .\b1-output\b3-workflow\plan.json .\b1-output\b3-workflow\attempt-001 --python-source .\b1-output\b3-workflow\part.py
 # 別のチェッカー：モデルを修正せず、新しいレポートに検査結果を記録する
-& .\template-builder\.venv\Scripts\python.exe .\tools\b3_check.py .\b1-output\b3-workflow\task.json .\b1-output\b3-workflow\attempt-001 .\b1-output\b3-workflow\check-001.json
+& .\.venv\Scripts\python.exe .\tools\b3_check.py .\b1-output\b3-workflow\task.json .\b1-output\b3-workflow\attempt-001 .\b1-output\b3-workflow\check-001.json
 # 進行役：結果を照合・集約する。独立検査へは自動遷移しない
-& .\template-builder\.venv\Scripts\python.exe .\tools\b3_collect.py .\b1-output\b3-workflow\task.json .\b1-output\b3-workflow\attempt-001 .\b1-output\b3-workflow\check-001.json .\b1-output\b3-workflow\result-001.json
+& .\.venv\Scripts\python.exe .\tools\b3_collect.py .\b1-output\b3-workflow\task.json .\b1-output\b3-workflow\attempt-001 .\b1-output\b3-workflow\check-001.json .\b1-output\b3-workflow\result-001.json
 ```
 
 `task.json` は元の抽出データ、承認済みの作成入力、元レビューのハッシュ、対象の面セット、接合条件、元配置、担当IDを保持する。元の絶対座標で新規生成する。`coordinator.txt` / `worker.txt` / `checker.txt` は役割への指示で、担当とチェッカーは自分で相手の作業を兼ねない。役割IDの記録はOSのアクセス制御ではなく、進行役が実際に別エージェントへ割り振る。
@@ -301,7 +301,7 @@ uv pip install --python .\template-builder\.venv\Scripts\python.exe PySide6-Esse
 
 ```powershell
 $env:PYTHONPATH = "$PWD\tools;$PWD\templates\profile\workflows"
-& .\template-builder\.venv\Scripts\python.exe -m unittest discover -s tests -p 'test_b3_*.py'
+& .\.venv\Scripts\python.exe -m unittest discover -s tests -p 'test_b3_*.py'
 ```
 
 ## 履歴付きテンプレートを生成する
@@ -324,7 +324,7 @@ $env:PYTHONPATH = "$PWD\tools;$PWD\templates\profile\workflows"
 ```
 
 ```powershell
-& .\template-builder\.venv\Scripts\python.exe .\tools\build_template.py .\b1-output .\b1-output\b3-input.json '1/1' .\b1-output\dimensions.json .\b1-output\template --map-face '1=mounting_plane'
+& .\.venv\Scripts\python.exe .\tools\build_template.py .\b1-output .\b1-output\b3-input.json '1/1' .\b1-output\dimensions.json .\b1-output\template --map-face '1=mounting_plane'
 ```
 
 `'1/1'` は対象部品の配置ID、`'1=mounting_plane'` は採用した候補ID 1の詳細面をテンプレートの取付面に対応づける例。対象部品の採用済み接合条件ごとに `--map-face` を指定する。この対応は形状の作成担当が明示し、出力時に面参照と、生成した形状で名前付き面を一意に特定できることを確認する。
@@ -336,9 +336,9 @@ $env:PYTHONPATH = "$PWD\tools;$PWD\templates\profile\workflows"
 取付ブロック1種類を対象に、生成形状の名前付き取付面に対応する詳細CAD面から取付平面と法線を得る。面内の向きは担当がアセンブリ座標の `--world-x` で指定する。取付平面上に投影した方向をテンプレートの+Xとし、その座標系で測った本体外形の中心を面内原点にする。外形寸法と、取付面の法線に沿う1つの貫通穴の径・中心を測り、形状の作成履歴から形状を新規生成する。
 
 ```powershell
-& .\template-builder\.venv\Scripts\python.exe .\tools\trial_fit.py .\b1-output .\b1-output\template .\b1-output\fit --world-x 1 0 0
-& .\template-builder\.venv\Scripts\python.exe .\tools\check_trial_fit.py .\b1-output .\b1-output\template .\b1-output\fit --length-tolerance-mm 0.01 --max-error-cc 0.01
-& .\template-builder\.venv\Scripts\python.exe .\tools\preview_fit.py .\b1-output .\b1-output\fit
+& .\.venv\Scripts\python.exe .\tools\trial_fit.py .\b1-output .\b1-output\template .\b1-output\fit --world-x 1 0 0
+& .\.venv\Scripts\python.exe .\tools\check_trial_fit.py .\b1-output .\b1-output\template .\b1-output\fit --length-tolerance-mm 0.01 --max-error-cc 0.01
+& .\.venv\Scripts\python.exe .\tools\preview_fit.py .\b1-output .\b1-output\fit
 ```
 
 方向としきい値は例。 `fitted.brep` はアセンブリの絶対座標で保存する。`fit.json` には計測寸法、テンプレートから絶対座標への変換、名前付き面の参照、レビューの接合条件を記録する。3番目のコマンドは必要に応じてWindowsのAIS画面で詳細形状と簡略形状を重ねて見るために使う。
@@ -357,7 +357,7 @@ $env:PYTHONPATH = "$PWD\tools;$PWD\templates\profile\workflows"
 計測から除外し、件数を別途記録する。
 
 ```powershell
-& .\template-builder\.venv\Scripts\python.exe .\tools\measure_features.py .\b1-output\model.brep
+& .\.venv\Scripts\python.exe .\tools\measure_features.py .\b1-output\model.brep
 ```
 
 - **接合・簡略化レビュー**の部品別・全体提案は各配置の詳細形状を `feature_measurements` に記録する。省略方針を確認するための情報で、既存の5 mm目安と面の保持・承認規則はそのまま使う。
@@ -373,7 +373,7 @@ $env:PYTHONPATH = "$PWD\tools;$PWD\templates\profile\workflows"
 `--port 0` を付けるとローカル比較ビューで該当面を橙に着色する。
 
 ```powershell
-& .\template-builder\.venv\Scripts\python.exe .\tools\view_short_edges.py .\b1-output\model.brep --edge-limit-mm 5 --port 0
+& .\.venv\Scripts\python.exe .\tools\view_short_edges.py .\b1-output\model.brep --edge-limit-mm 5 --port 0
 ```
 
 ## 再組み立てと空間検証
@@ -389,7 +389,7 @@ $env:PYTHONPATH = "$PWD\tools;$PWD\templates\profile\workflows"
 まとめられたかを別々に記録する。入力は同じ絶対座標系で指定する。
 
 ```powershell
-& .\template-builder\.venv\Scripts\python.exe .\tools\check_same_domain.py .\a.brep .\b.brep --report .\b1-output\fusion-check.json
+& .\.venv\Scripts\python.exe .\tools\check_same_domain.py .\a.brep .\b.brep --report .\b1-output\fusion-check.json
 ```
 
 `--trial-brep` を指定した場合は、有効な単一ソリッドになった試行形状を新規保存する。
@@ -401,9 +401,9 @@ $env:PYTHONPATH = "$PWD\tools;$PWD\templates\profile\workflows"
 抽出時の配置と検査済みの絶対座標BREPを使い、対象部品1つを簡略形状に置き換える。ほかの部品は抽出データの形状・配置を使う。接合面はレビューから引き継いだ参照で照合し、正を隙間、負を食い込みとして記録する。重なり面積は元の詳細面ペアに対する比で判定し、対象部品と周辺部品のソリッド同士の食い込み体積も確認する。
 
 ```powershell
-& .\template-builder\.venv\Scripts\python.exe .\tools\check_reassembly.py .\b1-output .\b1-output\fit .\b1-output\reassembly-check.json --min-overlap-ratio 0.95 --max-interference-mm3 0.01
-& .\template-builder\.venv\Scripts\python.exe .\tools\build_trial_space.py .\b1-output .\b1-output\fit .\b1-output\reassembly-check.json .\b1-output\space-config.json .\b1-output\trial-space
-& .\template-builder\.venv\Scripts\python.exe .\tools\check_trial_space.py .\b1-output\space-config.json .\b1-output\trial-space .\b1-output\space-check.json
+& .\.venv\Scripts\python.exe .\tools\check_reassembly.py .\b1-output .\b1-output\fit .\b1-output\reassembly-check.json --min-overlap-ratio 0.95 --max-interference-mm3 0.01
+& .\.venv\Scripts\python.exe .\tools\build_trial_space.py .\b1-output .\b1-output\fit .\b1-output\reassembly-check.json .\b1-output\space-config.json .\b1-output\trial-space
+& .\.venv\Scripts\python.exe .\tools\check_trial_space.py .\b1-output\space-config.json .\b1-output\trial-space .\b1-output\space-check.json
 ```
 
 2番目のコマンドは、同じ抽出データ・簡略形状に対する接合チェックのOKレポートを要求する。円筒から再組み立てに使った全ソリッドと、指定があれば外側埋め用のBREPを差し引き、`space.brep` と由来を記録した `space.json` を出力する。
@@ -433,8 +433,8 @@ $env:PYTHONPATH = "$PWD\tools;$PWD\templates\profile\workflows"
 独立検査のフィット・簡略化判定、再組み立て時の接合・空間検査がすべてOKの場合に登録する。フィット照合は `--report` でJSONを保存する。過去のレポートで登録用の照合情報が不足する場合は、現在の照合CLIでレポートを作り直す。
 
 ```powershell
-& .\template-builder\.venv\Scripts\python.exe .\tools\check_trial_fit.py .\b1-output .\b1-output\template .\b1-output\fit --length-tolerance-mm 0.01 --max-error-cc 0.01 --report .\b1-output\fit-check.json
-& .\template-builder\.venv\Scripts\python.exe .\tools\register_template.py .\b1-output .\b1-output\template .\b1-output\fit .\b1-output\trial-space .\b1-output\registry --version 1 --fit-report .\b1-output\fit-check.json --contact-report .\b1-output\reassembly-check.json --space-report .\b1-output\space-check.json --space-config .\b1-output\space-config.json
+& .\.venv\Scripts\python.exe .\tools\check_trial_fit.py .\b1-output .\b1-output\template .\b1-output\fit --length-tolerance-mm 0.01 --max-error-cc 0.01 --report .\b1-output\fit-check.json
+& .\.venv\Scripts\python.exe .\tools\register_template.py .\b1-output .\b1-output\template .\b1-output\fit .\b1-output\trial-space .\b1-output\registry --version 1 --fit-report .\b1-output\fit-check.json --contact-report .\b1-output\reassembly-check.json --space-report .\b1-output\space-check.json --space-config .\b1-output\space-config.json
 ```
 
 登録先は例では `b1-output/registry/mounting_block/v1/`。同じ版は上書きできない。テンプレートのCadQueryコード、`registration.json`、生成・検査・再組み立ての記録、判定レポート、空間設定を保存する。抽出、作成、独立検査、空間検証の対応をハッシュで照合するため、別の実行のレポートや生成物では登録できない。元CADと検証用BREPは元の検証ディレクトリに保管する。
@@ -451,7 +451,7 @@ Codexは、上記の単一機能CLIをローカルのPython環境で実行し、
 
 ```powershell
 $env:PYTHONPATH = "$PWD\tools;$PWD\templates\profile\workflows"
-& .\template-builder\.venv\Scripts\python.exe -m unittest discover -s tests -p 'test_b2_*.py' -v
+& .\.venv\Scripts\python.exe -m unittest discover -s tests -p 'test_b2_*.py' -v
 ```
 
 合成形状で平面・円筒のトリム面積、隙間、除外条件、面対応、レビュー修正・保存・復元、未確認ガード、受け渡しを確認する。HTTPテストは一時的なループバックサーバーを起動する。実機CAD・生成物はGit管理外のまま保持する。
@@ -476,11 +476,11 @@ Codexからは作業とチェックを別の呼び出しにし、ファイルで
 
 ```powershell
 # 接続だけ検査（CADやタスクのプロンプトは送らない）
-& .\template-builder\.venv\Scripts\python.exe .\tools\b3_acp.py --probe .\b1-output\provider.json
+& .\.venv\Scripts\python.exe .\tools\b3_acp.py --probe .\b1-output\provider.json
 # 元レビューと設定を検証するだけ。エージェントは起動しない
-& .\template-builder\.venv\Scripts\python.exe .\tools\b3_acp.py .\b1-output\b3-workflow\task.json .\b1-output\provider.json .\b1-output\acp-run
+& .\.venv\Scripts\python.exe .\tools\b3_acp.py .\b1-output\b3-workflow\task.json .\b1-output\provider.json .\b1-output\acp-run
 # 実際の役割呼出しと形状作成・検査
-& .\template-builder\.venv\Scripts\python.exe .\tools\b3_acp.py .\b1-output\b3-workflow\task.json .\b1-output\provider.json .\b1-output\acp-run --run
+& .\.venv\Scripts\python.exe .\tools\b3_acp.py .\b1-output\b3-workflow\task.json .\b1-output\provider.json .\b1-output\acp-run --run
 ```
 
 クライアントのファイル・ターミナル機能は広告せず、権限要求はキャンセルして停止・記録する。プロバイダー自身のツール制限は別設定であり、プロンプトや別セッションはOSサンドボックスを代替しない。最終進行役の後にも元レビューと成果物の改変を検査する。実行記録・モデルID・検査結果を保持し、タイムアウト／取消／不正応答／認証失敗を成功に見せない。プロトコル根拠：[ACP v1](https://agentclientprotocol.com/protocol/v1/transports)、[Kiro ACP](https://kiro.dev/docs/cli/acp/)。

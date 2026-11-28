@@ -134,7 +134,7 @@ class ACPClient:
 
     def initialize(self):
         result = self.request('initialize', {'protocolVersion':1,'clientCapabilities':{},
-            'clientInfo':{'name':'acoustic-cavity-mesher-b3','version':'1'}})
+            'clientInfo':{'name':'cad-rebuilder-b3','version':'1'}})
         if result.get('protocolVersion') != 1:
             raise ACPError('Configured provider does not support ACP v1; no implicit protocol fallback')
         return result

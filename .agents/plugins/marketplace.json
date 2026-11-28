@@ -1,14 +1,14 @@
 {
-  "name": "acoustic-cavity-mesher-local",
+  "name": "cad-rebuilder-local",
   "interface": {
-    "displayName": "Acoustic Cavity Mesher"
+    "displayName": "CAD Rebuilder"
   },
   "plugins": [
     {
-      "name": "acoustic-cavity-mesher",
+      "name": "cad-rebuilder",
       "source": {
         "source": "local",
-        "path": "./plugins/acoustic-cavity-mesher"
+        "path": "./plugins/cad-rebuilder"
       },
       "policy": {
         "installation": "AVAILABLE",

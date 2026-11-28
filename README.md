@@ -9,7 +9,7 @@
 セットアップ後、リポジトリのルートで実行します。
 
 ```powershell
-$python = '.\template-builder\.venv\Scripts\python.exe'
+$python = '.\.venv\Scripts\python.exe'
 & $python .\tools\workspace.py init
 # 元のSTEPを local/input/ に置いてから実行する
 & $python .\tools\workspace.py start .\local\input\stepassy_a.step --analysis acoustics
@@ -20,6 +20,7 @@ $python = '.\template-builder\.venv\Scripts\python.exe'
 `improvements.md` を作成します。STEP抽出とレビュー以降は
 [作業手順](docs/cad-workflow.md)に従って進めます。
 `trial_rebuild_step_part.py` は確定済みの入力を用いた単一部品の試行用ワークフローです。
+既存の仮想環境を使う場合は、コマンドの `.venv` を `template-builder/.venv` に読み替えます。
 
 旧案件と部品ルールは従来の `template-builder/b1-output/` にあります。
 新規案件の部品ルールの既定保存先は `local/part-rules/` です。
@@ -33,7 +34,7 @@ $python = '.\template-builder\.venv\Scripts\python.exe'
 1. このリポジトリをチェックアウトし、ルートをPowerShellで開きます。
 2. 下のコマンドでCADエンジン、Viewer Core、Webビューアーを同じ仮想環境にインストールします。
 3. リポジトリをCodexデスクトップで開きます。再起動してプラグイン一覧の
-   **Acoustic Cavity Mesher** ソースから **acoustic-cavity-mesher** をインストールします。
+   **CAD Rebuilder** ソースから **cad-rebuilder** をインストールします。
    リポジトリ側のソース定義は `.agents/plugins/marketplace.json` です。
 4. このプロジェクトの新しいチャットでプラグインを選択し、手元のSTEPを指定して
    「このSTEPから部品と配置を抽出して」と依頼します。
@@ -51,8 +52,8 @@ $python = '.\template-builder\.venv\Scripts\python.exe'
 
 # インストール先が異なる場合はx64版Python 3.11の実際のパスに置き換える
 uv venv --python 'C:\Program Files\Python311\python.exe' .venv
-uv pip install --python .\template-builder\.venv\Scripts\python.exe -r requirements.txt
-& .\template-builder\.venv\Scripts\python.exe -c "import cadquery, OCP, ocp_viewer, ocp_viewer_core; print('CAD and Web viewer OK')"
+uv pip install --python .\.venv\Scripts\python.exe -r requirements.txt
+& .\.venv\Scripts\python.exe -c "import cadquery, OCP, ocp_viewer, ocp_viewer_core; print('CAD and Web viewer OK')"
 ```
 
 すでにこのプロジェクト用の `.venv` がある場合は、環境の作成を省略し、
@@ -67,7 +68,7 @@ uv pip install --python .\template-builder\.venv\Scripts\python.exe -r requireme
 
 ```powershell
 codex plugin marketplace add .
-codex plugin add acoustic-cavity-mesher@acoustic-cavity-mesher-local
+codex plugin add cad-rebuilder@cad-rebuilder-local
 ```
 
 ### ACPとPythonによる実行構成
