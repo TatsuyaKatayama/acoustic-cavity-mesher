@@ -5,10 +5,11 @@ import re
 PROJECT = Path(__file__).resolve().parent.parent
 B3_ROLES = {'coordinator': 'coordinator', 'worker': 'b3-worker',
             'checker': 'b3-checker', 'strategy': 'b3-strategy'}
+PROFILE_ROLES = (*B3_ROLES.values(), 'b4-checker', 'memory-reflection')
 
 
 def load_role(role):
-    if role not in {*B3_ROLES.values(), 'b4-checker'}:
+    if role not in PROFILE_ROLES:
         raise ValueError(f'Unknown workflow role: {role}')
     profile = PROJECT / 'local' / 'profile'
     if not profile.is_dir():
@@ -28,6 +29,6 @@ if __name__ == '__main__':
     import argparse
 
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('role', choices=(*B3_ROLES.values(), 'b4-checker'))
+    parser.add_argument('role', choices=PROFILE_ROLES)
     args = parser.parse_args()
     print(load_role(args.role))
