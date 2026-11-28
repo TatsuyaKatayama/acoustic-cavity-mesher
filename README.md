@@ -1,106 +1,69 @@
 # CAD Rebuilder
 
-機械アセンブリのCADを簡略化し、音響解析に使う内部空間を抽出・検証するプロジェクトです。
+STEPアセンブリから、接合や必要な開口を保った簡略CADを再構築し、音響解析用の空間CADを作成・検証するツールです。Codexの親エージェントが案件の進行と承認を管理し、担当と独立チェッカーに短い作業を割り当てます。
 
-- [CADツールのセットアップと使い方](docs/cad-workflow.md)
-- [仕様書と工程・技能の図](docs/SPEC.md)
+## セットアップ
 
-## ローカル案件を始める
-
-セットアップ後、リポジトリのルートで実行します。
+Windows x64版Python 3.11と `uv` を用意し、リポジトリのルートで実行します。Pythonのパスはインストール先に合わせてください。
 
 ```powershell
+uv venv --python 'C:\Program Files\Python311\python.exe' .venv
 $python = '.\.venv\Scripts\python.exe'
+uv pip install --python $python -r requirements.txt
 & $python .\tools\workspace.py init
-# 元のSTEPを local/input/ に置いてから実行する
+```
+
+`requirements.txt` にはCAD処理のCadQueryと、比較・レビュー用のWebビューアーが含まれます。初期化すると標準プロファイルが `local/profile/` に複製され、再初期化では不足ファイルが補われます。
+
+## 案件を始める・再開する
+
+元のSTEPを `local/input/` に置き、案件フォルダを作ります。
+
+```powershell
 & $python .\tools\workspace.py start .\local\input\stepassy_a.step --analysis acoustics
 ```
 
-初期化は `templates/profile/` から不足ファイルを補い、既存のユーザー定義を保持します。
-案件開始は `local/cases/stepassy_a/` に案件設定、レビュー・成果物の保存先、
-`improvements.md` を作成します。STEP抽出とレビュー以降は
-[作業手順](docs/cad-workflow.md)に従って進めます。
-案件の続行は [中断・再開できる案件手順](docs/case-workflow.md) を参照してください。
-`trial_rebuild_step_part.py` は確定済みの入力を用いた従来の単一部品試行です。
-既存の仮想環境を使う場合は、コマンドの `.venv` を `template-builder/.venv` に読み替えます。
-
-旧案件と部品ルールは従来の `template-builder/b1-output/` にあります。
-新規案件の部品ルールの既定保存先は `local/part-rules/` です。
-
-## インストール（CAD・Viewer Core・ビューアー・Codex）
-
-このプラグインは、Codexが開いたローカルのチェックアウトで既存のCADコマンドを呼び出します。
-先に同じPCに **Windows x64版Python 3.11** と **uv** を入れてください。Windows ARM64でも、
-このプロジェクトで検証したのはx64版Pythonとx64版CADライブラリの組み合わせです。
-
-1. このリポジトリをチェックアウトし、ルートをPowerShellで開きます。
-2. 下のコマンドでCADエンジン、Viewer Core、Webビューアーを同じ仮想環境にインストールします。
-3. リポジトリをCodexデスクトップで開きます。再起動してプラグイン一覧の
-   **CAD Rebuilder** ソースから **cad-rebuilder** をインストールします。
-   リポジトリ側のソース定義は `.agents/plugins/marketplace.json` です。
-4. このプロジェクトの新しいチャットでプラグインを選択し、手元のSTEPを指定して
-   「このSTEPから部品と配置を抽出して」と依頼します。
-   [Codexのローカルプラグイン手順](https://developers.openai.com/plugins/build/plugins#install-a-local-plugin-manually)
-
-### CADとビューアーのセットアップ
-
-| 役割 | インストールするもの |
-| --- | --- |
-| CAD処理 | CadQueryと、その依存のOCP（OCCT）。STEP/BREPの入出力、生成、形状演算に使用 |
-| Viewer Core | OCP Viewer Core。比較・色分け表示用のCADデータ変換に使用 |
-| ビューアー | OCP Viewer。配布物に含まれるthree-cad-viewerをブラウザで表示 |
+Codexでこのリポジトリを開き、`local/cases/stepassy_a/` を指定して案件の開始を依頼します。案件の窓口は `local/profile/agents/coordinator/AGENT.md` で定義しています。中断後は同じ案件フォルダを指定して再開を依頼できます。次に着手できる作業をCLIで確認する場合は、次を実行します。
 
 ```powershell
-
-# インストール先が異なる場合はx64版Python 3.11の実際のパスに置き換える
-uv venv --python 'C:\Program Files\Python311\python.exe' .venv
-uv pip install --python .\.venv\Scripts\python.exe -r requirements.txt
-& .\.venv\Scripts\python.exe -c "import cadquery, OCP, ocp_viewer, ocp_viewer_core; print('CAD and Web viewer OK')"
+& $python .\local\profile\workflows\python\advance_case.py .\local\cases\stepassy_a status
 ```
 
-すでにこのプロジェクト用の `.venv` がある場合は、環境の作成を省略し、
-`uv pip install` から実行します。依存ファイルにはCadQueryとWebビューアーを含みます。
-この構成でSTEPを読み、CADを生成し、比較ビューを開けます。別のCADアプリや
-ブラウザ拡張、npmの導入は不要です。PySide6は任意の旧Qt/AIS画面を使う場合に追加してください。
-[Webビューアーの起動方法](docs/cad-workflow.md#webビューアでcadを開く)
+Pythonの `status` は保存済みの成果物から次に進める作業を判定し、`dispatch` はその作業の指示と参照先を返します。担当の起動、CAD処理、画面の提示、結果の登録は、親エージェントが各工程の手順に沿って行います。
 
-### Codex CLIから登録する場合
+以下は案件の進行順です。各工程で使えるツールと、担当が行う作業の境界は [実装済みの範囲](docs/case-workflow.md#実装済みの範囲) を参照してください。
 
-リポジトリのルートで実行します。この方法でも、新しいCodexチャットは同じチェックアウトで開きます。
+| 工程 | 作業 |
+|---|---|
+| B1 | STEPから部品・配置を抽出し、抽出担当が元STEPと照合する |
+| B2 | 接合・簡略化案を独立検査し、提示可の配置から承認を受ける。全配置の承認後に全体を最終確認する |
+| B3–B4 | 配置ごとに簡略CADを再構築し、独立チェッカーがフィットと簡略化適合性を評価する |
+| B5.1–B5.3 | 再組立、空間CADの生成、必要な修正と再検証を行う。親が結果をまとめ、空間CADと作成履歴のパスを提示する |
+| B6 | 記憶反映担当が案件の知見を整理し、ユーザーが採用した改善を反映・検証する |
+
+## Codexプラグイン
+
+Codexで **CAD Rebuilder** ソースから `cad-rebuilder` をインストールします。CLIから登録する場合は、リポジトリのルートで実行します。
 
 ```powershell
 codex plugin marketplace add .
 codex plugin add cad-rebuilder@cad-rebuilder-local
 ```
 
-### 親エージェントと短いワークフロー
+## リポジトリ構成
 
-親エージェントがユーザーとの対話、承認、差し戻し、再開を担当します。
-工程別の手順は `profile/workflows/base/`、実行可能な次の作業を判定するPythonは
-`profile/workflows/python/` にあります。担当とチェッカーは、割り当てられた作業の
-技能とツールを使い、結果を案件フォルダに保存します。
-従来の単一部品ACP試行も利用できます。 [ACPの設定と試行](docs/cad-workflow.md#acpでpythonから役割エージェントを呼ぶ)
-
-### ビューアーのライセンス
-
-本リポジトリのMITライセンスは本リポジトリのコードに適用されます。
-依存パッケージのビューアー本体はプラグインに同梱していません。OCP Viewerと
-OCP Viewer CoreはApache-2.0、three-cad-viewerはMITです。それぞれの配布物に
-含まれる著作権表示と第三者通知は、比較画面・接合・簡略化レビュー画面の「ライセンス」から
-閲覧できます。 [OCP Viewer](https://github.com/bernhard-42/ocp_viewer) · [OCP Viewer Core](https://github.com/bernhard-42/ocp-viewer-core) · [three-cad-viewer](https://github.com/bernhard-42/three-cad-viewer)
-
-## アーキテクチャ
-
-| 層 | 責務 |
+| パス | 内容 |
 |---|---|
-| ワークフロー・エージェント | 案件の進行、担当割り当て、人の判断待ち、成果物からの再開を扱う。初期の実行環境はCodex。 |
-| インターフェース | 単一機能のCLIで処理を呼び出す。CAD閲覧・確認画像と接合・簡略化レビューにはWebビューアーを使う。ファイルと構造化データで結果を受け渡す。 |
-| アプリケーション | 部品抽出、フィット、差分計測、接合検査、内部空間の抽出などのユースケースを実行する。 |
-| ドメイン | 部品の配置、テンプレートのパラメータ、接合条件、判定結果、メッシュの領域・境界の意味を定義する。 |
-| 技術アダプター | OCCT、CadQueryなどのライブラリと、CAD・解析ファイルの入出力を扱う。 |
+| `tools/` | CAD処理、検査、レビュー画面、案件初期化のCLI |
+| `templates/profile/` | 初期化に使う標準のエージェント定義、技能、ワークフロー |
+| `local/profile/` | 案件で使い、ユーザーが育てるプロファイル。短い工程手順は `workflows/base/`、Pythonの進行管理は `workflows/python/` |
+| `local/input/`、`local/cases/`、`local/part-rules/` | 元STEP、案件のレビュー・成果物・`improvements.md`、再利用する部品方針 |
 
-ワークフローと確認画面はアプリケーションの操作を呼び出す。アプリケーションはドメインと入出力の契約に依存し、ライブラリ固有の型と処理はアダプターに置く。CAD処理の実装は `tools/` に置く。
+`local/` はGit管理外です。
 
-## ライセンス
+## ドキュメントとライセンス
 
-[MIT License](LICENSE)
+- [CAD案件の進行と再開](docs/case-workflow.md)
+- [CADツールとビューアーの使い方](docs/cad-workflow.md)
+- [仕様書](docs/SPEC.md)
+- [MIT License](LICENSE)。ビューアー依存ライブラリのライセンスは画面の「ライセンス」から確認できます。

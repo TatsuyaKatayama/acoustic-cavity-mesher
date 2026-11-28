@@ -12,7 +12,6 @@ section of `docs/cad-workflow.md` for the requested operation. Use
 the setup section of the root README. Run `tools/workspace.py init` with
 that interpreter before reading local role definitions. Run CAD command
 scripts from `tools/` with the repository root as the working directory.
-Existing checkouts may use `template-builder/.venv/Scripts/python.exe`.
 
 - For a complete case, use the parent coordinator in
   `local/profile/agents/coordinator/AGENT.md` and follow `docs/case-workflow.md`.
