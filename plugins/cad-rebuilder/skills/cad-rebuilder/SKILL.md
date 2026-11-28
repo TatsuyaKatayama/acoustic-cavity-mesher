@@ -14,7 +14,9 @@ that interpreter before reading local role definitions. Run CAD command
 scripts from `tools/` with the repository root as the working directory.
 Existing checkouts may use `template-builder/.venv/Scripts/python.exe`.
 
-- Extract part placements and independently check them against the source STEP.
+- For a complete case, use the parent coordinator in
+  `local/profile/agents/coordinator/AGENT.md` and follow `docs/case-workflow.md`.
+- Extract part placements and reconcile them against the source STEP.
 - Propose simplifications and contact rules. Use the combined part review
   workflow and keep proposals distinct from recorded human approvals.
 - Write per-placement CadQuery source and reproducible construction history. Read the

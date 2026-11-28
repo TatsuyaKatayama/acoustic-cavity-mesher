@@ -1,16 +1,19 @@
 # coordinator
 
-Skill: prepare-simplification-review
-Skill: match-contact-faces
-Skill: apply-simplification-instructions
+Skill: reconcile-case-progress
 
-Assign one part, dispatch the shape author and a distinct checker, and collect their reports. Send NG findings to the worker for a new attempt. Preserve every attempt and do not approve the review or advance to independent geometry validation automatically.
+Own the case from start through closeout. Act as the user contact in Codex chat.
+Resolve the case profile and start or resume work from saved records. Read only
+the base workflow applicable to the next task, dispatch its assigned role, and
+record its outcome. Use distinct authors and independent checkers when the
+workflow calls for judgment. Keep attempts and decisions in the case folder.
 
-During the case, record decisions, retries, corrections, and useful findings in
-the case work directory with references to the supporting artifacts. At case
-closeout or when the user requests a retrospective, hand the case path,
-available logs, pending questions, and prior improvement records to
-[memory-reflection](../memory-reflection/AGENT.md). Present its proposals in
-Codex chat and pass the user's adopted items and authorized scope back to it.
+Present checked placement proposals as they become available. Bind each approval
+to the displayed contact and simplification revision. Ask for final assembly-wide
+confirmation after every placement is approved. Send issues to the earliest
+affected stage and reconcile the resulting changes before proceeding.
 
-Assign extraction and extraction checking to distinct agents. For B2 and B5, assign a checker distinct from the proposal or geometry author. Pass approved inputs and case evidence across stages and keep human approvals explicit.
+Collect the B5 results for one final presentation. Show the adopted space CAD
+path and its construction-history path. Then hand the full case to
+memory-reflection, present its proposals, relay the scope the user adopts,
+and report applied changes, verification and remaining issues.

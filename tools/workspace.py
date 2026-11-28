@@ -7,6 +7,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 LOCAL = ROOT / "local"
 TEMPLATE = ROOT / "templates" / "profile"
+DEFAULT_WORKFLOW = "python/advance_case.py"
 
 
 def initialize():
@@ -28,14 +29,17 @@ def start(input_path, analysis, precision, workflow):
     if not source.is_file() or source.suffix.lower() not in {".step", ".stp"}:
         raise ValueError("Select a STEP file.")
     initialize()
-    if Path(workflow).name != workflow or not (LOCAL / "profile" / "workflows" / workflow).is_file():
+    workflows = (LOCAL / "profile" / "workflows").resolve()
+    selected = (workflows / workflow).resolve()
+    if (Path(workflow).is_absolute() or not selected.is_relative_to(workflows)
+            or selected.suffix != ".py" or not selected.is_file()):
         raise ValueError("Select a Python workflow in local/profile/workflows.")
     case = LOCAL / "cases" / source.stem
     case.mkdir()
     for name in ("review", "artifacts"):
         (case / name).mkdir()
     metadata = {"schema_version": 1, "input": str(source), "analysis": analysis,
-                "precision": precision, "workflow": workflow}
+                "precision": precision, "workflow": selected.relative_to(workflows).as_posix()}
     (case / "case.json").write_text(json.dumps(metadata, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     (case / "improvements.md").write_text("# Improvements\n", encoding="utf-8")
     return case
@@ -49,7 +53,7 @@ def main():
     begin.add_argument("input", type=Path)
     begin.add_argument("--analysis", required=True)
     begin.add_argument("--precision", default="default")
-    begin.add_argument("--workflow", default="trial_rebuild_step_part.py")
+    begin.add_argument("--workflow", default=DEFAULT_WORKFLOW)
     args = parser.parse_args()
     try:
         if args.command == "init":
