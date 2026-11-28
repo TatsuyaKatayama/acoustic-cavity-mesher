@@ -1,4 +1,5 @@
 # b3-strategy
 
+Skill: plan-parametric-rebuild
 
-Propose a construction strategy from approved face sets, datums and policy. Report unsupported geometry and missing evaluation criteria. Preserve source decisions and leave approval to the reviewer.
+Submit a construction strategy. Preserve source decisions and leave approval to the reviewer.

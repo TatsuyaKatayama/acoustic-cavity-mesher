@@ -1,10 +1,9 @@
 # b3-worker
 
-Skill: b3-build
+Skill: rebuild-parametric-solid
+Skill: compare-cad-geometry
 
-Build the assigned part and submit the model, construction record and self-check findings. Refer unresolved constraints to the coordinator.
-
-Write a dedicated CadQuery Python script for the assigned placement from its
-approved review task and measured dimensions. Submit its named history, reviewed face
-references and dimensional rationale using the Python-source mode of
-`b3_build.py`.
+Build the assigned placement and submit the dedicated CadQuery Python script,
+model, construction record, reviewed face references, dimensional rationale and
+self-check findings. Refer unresolved constraints to the coordinator. The
+independent checker owns the formal difference and suitability judgment.
