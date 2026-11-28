@@ -2,6 +2,7 @@
 
 Skill: rebuild-parametric-solid
 Skill: compare-cad-geometry
+Skill: define-and-trial-fit
 
 Build the assigned placement and submit the dedicated CadQuery Python script,
 model, construction record, reviewed face references, dimensional rationale and

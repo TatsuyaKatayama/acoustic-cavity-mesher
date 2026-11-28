@@ -5,7 +5,10 @@ import re
 PROJECT = Path(__file__).resolve().parent.parent
 B3_ROLES = {'coordinator': 'coordinator', 'worker': 'b3-worker',
             'checker': 'b3-checker', 'strategy': 'b3-strategy'}
-PROFILE_ROLES = (*B3_ROLES.values(), 'b4-checker', 'memory-reflection')
+PROFILE_ROLES = (
+    *B3_ROLES.values(), 'b4-checker', 'memory-reflection',
+    'assembly-extractor', 'extraction-checker', 'assembly-space-author',
+)
 
 
 def load_role(role):
