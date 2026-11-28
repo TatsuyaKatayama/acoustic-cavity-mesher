@@ -5,9 +5,9 @@ description: Use the cad-rebuilder project to inspect STEP or BREP files, run CA
 
 Run in the user's CAD Rebuilder checkout. Locate the repository
 from the active workspace and verify it contains `docs/cad-workflow.md`
-and `SPEC.md`. Run tools from the checkout, since the installed plugin skill
-is cached separately. Read the checkout's `AGENTS.md` and the section of
-`docs/cad-workflow.md` for the requested operation. Use
+and `docs/SPEC.md`. Run tools from the checkout, since the installed plugin skill
+is cached separately. Read the checkout's `AGENTS.md` if present, and the
+section of `docs/cad-workflow.md` for the requested operation. Use
 `.venv/Scripts/python.exe` on Windows. If it is missing, use
 the setup section of the root README. Run `tools/workspace.py init` with
 that interpreter before reading local role definitions. Run CAD command
