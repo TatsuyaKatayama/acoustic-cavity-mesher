@@ -1,32 +1,8 @@
-# 音響FEM用の簡略形状テンプレート作成
+# CAD Rebuilder のツールとビューアー
 
-案件全体の進行・再開は [CAD案件の進行と再開](case-workflow.md) を参照する。以下は工程内で使うツールと、単一部品の試行手順。
+案件全体の進行・再開は [CAD案件の進行と再開](case-workflow.md) を参照する。以下は工程内で使うツールと、単一部品の試行手順。案件進行CLIと各ツールの実装上の分担は [実装済みの範囲](case-workflow.md#実装済みの範囲) を参照する。
 
-このディレクトリには、CADの抽出、簡略化、独立検査、再組み立てと内部空間の検証ツールを置く。
-
-## 初期の構成
-
-| 場所 | 使用するもの |
-|---|---|
-| Windows 11 | 既存のCodexとPowerShell。CodexはこのディレクトリでPythonの単一機能コマンドを実行する。 |
-| このディレクトリの `.venv` | `uv venv` で既存のWindows x64版 Python 3.11を指定し、`uv pip` でCadQueryとその依存のOCPを入れる。OCP経由でOCCTの形状・XDE APIを使う。 |
-| Windowsの確認画面 | OCCT AIS。レビューの画面を試作するときに、同じ環境へQtのPythonバインディングを入れる。まずPySide6とAISのウィンドウ表示・面選択が動くか確認する。 |
-| WSL | Bの初期開発はWindows側で進める。Linuxでのバッチ実行が必要になった場合に、WSL内に別のPython環境を作る。 |
-
-このPCはWindows ARM64で、導入済みのPython 3.11.9はWindows x64版（`win-amd64`）。Windows向けOCPのx64 wheelを使うため、このPythonを明示して仮想環境を作る。OCCTはCadQueryの依存経由で導入する。
-
-## Windowsでの手動セットアップ
-
-導入済みの `uv` を使用する。PowerShellで、カレントディレクトリが親の `cad-rebuilder` の場合に以下を実行する。
-
-```powershell
-
-uv venv --python 'C:\Program Files\Python311\python.exe' .venv
-uv pip install --python .\.venv\Scripts\python.exe -r requirements.txt
-& .\.venv\Scripts\python.exe -c "import cadquery as cq; from OCP.STEPCAFControl import STEPCAFControl_Reader; from OCP.AIS import AIS_Shape; print(cq.Workplane('XY').box(1, 1, 1).val().Volume())"
-```
-
-最後のコマンドで単位立方体の体積（およそ1）が出れば、基本の形状生成とXDE・AISモジュールの読み込みを確認できる。AISの描画と面選択は、GUI試作時にWindowsの対話セッションで確認する。
+セットアップは [README](../README.md#セットアップ) を参照する。このガイドのコマンドはリポジトリのルートから実行する。通常のCAD表示とレビューはローカルWebビューアーを使う。既存のQt/AIS画面を使う場合は、同じ仮想環境に対応する依存ライブラリを追加する。
 
 ## STEPアセンブリから部品と配置を抽出する
 
@@ -55,7 +31,7 @@ CADツールの仮想環境で次のコマンドを実行する。
 [ローカルビューア](http://127.0.0.1:3939)をブラウザで開き、別のPowerShellからモデルを送る。
 
 ```powershell
-& .\.venv\Scripts\python.exe .\tools\view_cad.py ..\test-data\rotary-compressor-test.step --png .\b1-output\compressor.png
+& .\.venv\Scripts\python.exe .\tools\view_cad.py .\local\input\stepassy_a.step --png .\b1-output\compressor.png
 ```
 
 STEPアセンブリと絶対座標のBREPを表示できる。PNG保存にはビューアに接続したブラウザが必要。画像確認はCodexがPNGを読み、定量判定には従来のOCCT計測結果を使う。レビューの面参照・判断の保存には、下記の専用Webレビュー画面を使う。
@@ -246,7 +222,7 @@ uv pip install --python .\.venv\Scripts\python.exe PySide6-Essentials
 & .\.venv\Scripts\python.exe .\tools\export_template_inputs.py .\b1-output .\b1-output\contacts.json .\b1-output\review.json .\b1-output\b3-input.json
 ```
 
-- AISの候補一覧から1件選択し、未確認・採用・除外を指定する。面が違う場合は差し替える側を選んでCAD面をクリックする。一覧の隙間と重なり面積は提案時の値。
+- 現行案件では、親が提示可と判断された案をWeb画面に表示し、修正指示をチャットで受ける。独立検査の結果は案件進行CLIに記録する。
 - 採用した接合には「塞ぐ」（目標隙間0 mm）または「隙間を残す」（正の目標隙間）と許容差を指定する。隙間を残す場合は、許容差を目標値より小さくし、許容範囲に0 mmが入らないようにする。
 - 「レビュー保存」で現在の候補と簡略化メモを保存し、別の候補へ進む。再起動時に同じファイルを指定すると、判断・修正した面・接合条件を復元する。
 - 接合面全件判断済み、かつ簡略化レビューの全提案判断・確定済みなら、出力CLIが採用面ペアと接合条件を `b3-input.json` の `contact_constraints` に書き出す。`simplification_guidance.face_review` に保護する接合面、省略する面、明示的に残す面、既定の残す方針、実際の目安寸法、簡略化メモを渡す。実際の簡略形状は履歴付きで新規生成する。片方のレビューだけでは出力しない。既存の接合面レビューJSONはそのまま利用できるが、作成担当へ渡す前に簡略化レビューを追加する必要がある。
@@ -448,7 +424,7 @@ $env:PYTHONPATH = "$PWD\tools;$PWD\templates\profile\workflows"
 
 Codexは、上記の単一機能CLIをローカルのPython環境で実行し、BREPとJSONを工程間で渡す。抽出、接合候補生成、形状作成用の出力、テンプレート生成、フィット、検査、登録はGUIなしで呼び出せる。チェック系CLIはOK・NGを終了コードで、測定値や問題箇所をJSONで返す。
 
-レビューの候補承認・差し替えはローカルWeb画面（または既存Qt/AIS）で行い、保存したレビューJSONを出力CLIへ渡す。Webサーバーはレビューの状態取得・面計測・レビュー保存のAPIを備える。汎用のカメラ遠隔操作APIやMCPサーバーは用意していない。Python関数は処理の実装に使っており、自動処理の入口は各CLIと成果物ファイルとする。
+統合レビューはWeb画面に表示し、修正指示はCodexチャットで受ける。表示した提案版に対する配置別承認と全体確認を保存してから、出力CLIでB3へ渡す。Webサーバーはレビューの状態取得・面計測・レビュー保存のAPIを備える。汎用のカメラ遠隔操作APIやMCPサーバーは用意していない。Python関数は処理の実装に使っており、自動処理の入口は各CLIと成果物ファイルとする。
 
 ### レビューの回帰テスト
 
@@ -458,16 +434,6 @@ $env:PYTHONPATH = "$PWD\tools;$PWD\templates\profile\workflows"
 ```
 
 合成形状で平面・円筒のトリム面積、隙間、除外条件、面対応、レビュー修正・保存・復元、未確認ガード、受け渡しを確認する。HTTPテストは一時的なループバックサーバーを起動する。実機CAD・生成物はGit管理外のまま保持する。
-
-## 最初の実装範囲
-
-1. **抽出**。STEPアセンブリ1件から部品と配置を取得し、部品名・配置ID・単位を一覧に出す。対象部品と周辺部品を後続処理へ渡せるようにする。
-2. **接合候補とレビュー**。元の配置から、距離・向き・重なりで平面・同軸円筒の接合候補を抽出する。Web（または既存AIS）で両側の面を同色にし、確認・修正した面ペアと期待する隙間をJSONで保存する。
-3. **テンプレート作成と検証**。履歴を持つCadQueryテンプレートを試しフィットし、再組み立て時の接合検査と円筒差し引き後の空間検査を経て登録する。
-
-Codexからは作業とチェックを別の呼び出しにし、ファイルで成果物を渡す。人による確認はWeb画面またはAISで行い、保存した結果を後続工程で読む。最初の入力はSTEPとし、Parasolid直接入力は親の仕様にある検証項目として扱う。
-
-[CadQueryのインストール資料](https://cadquery.readthedocs.io/en/stable/installation.html) · [OCPの配布ファイル](https://pypi.org/project/cadquery-ocp/#files) · [OCCT AISの可視化ガイド](https://occt3d.com/dev/doc/overview/html/occt_user_guides__visualization.html)
 
 ## ACPでPythonから役割エージェントを呼ぶ
 
