@@ -345,7 +345,7 @@ class SimplificationTests(unittest.TestCase):
 
     def test_cli_proposal_and_export_require_both_reviews(self):
         self.fixture.session.save(self.fixture.accepted())
-        builder = Path(__file__).resolve().parent
+        builder = Path(__file__).resolve().parents[1] / 'tools'
         policy_path = self.fixture.bundle / "cli-simplification.json"
         output_path = self.fixture.bundle / "handoff.json"
         arguments = [str(self.fixture.bundle), str(self.fixture.candidates), str(self.fixture.review)]
