@@ -1,6 +1,6 @@
 ---
 name: verify-assembly-extraction
-description: Independently compare a STEP extraction with the source assembly.
+description: Compare a STEP extraction with the source assembly.
 ---
 
 Run tools/check_assembly.py against the source STEP and extraction bundle.

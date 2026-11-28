@@ -20,7 +20,8 @@ $python = '.\.venv\Scripts\python.exe'
 案件開始は `local/cases/stepassy_a/` に案件設定、レビュー・成果物の保存先、
 `improvements.md` を作成します。STEP抽出とレビュー以降は
 [作業手順](docs/cad-workflow.md)に従って進めます。
-`trial_rebuild_step_part.py` は確定済みの入力を用いた単一部品の試行用ワークフローです。
+案件の続行は [中断・再開できる案件手順](docs/case-workflow.md) を参照してください。
+`trial_rebuild_step_part.py` は確定済みの入力を用いた従来の単一部品試行です。
 既存の仮想環境を使う場合は、コマンドの `.venv` を `template-builder/.venv` に読み替えます。
 
 旧案件と部品ルールは従来の `template-builder/b1-output/` にあります。
@@ -72,11 +73,13 @@ codex plugin marketplace add .
 codex plugin add cad-rebuilder@cad-rebuilder-local
 ```
 
-### ACPとPythonによる実行構成
+### 親エージェントと短いワークフロー
 
-最終構成は **Pythonが作業順・成果物・人の確認待ちを管理し、ACPで役割別のLLMを呼ぶマルチエージェント方式**です。作成担当が配置ごとのCadQueryコードを生成し、独立したチェッカーが検証します。CAD演算と表示は同じローカルCLIを使います。
-Codexプラグインはローカルで工程を使う入口です。現在のACP実装では、配置ごとに形状作成と作成結果の検査を試行でき、全工程の一括運転は今後の範囲です。ACPプロバイダーの設定はCADツールの手順を参照してください。
-[ACPの設定と試行](docs/cad-workflow.md#acpでpythonから役割エージェントを呼ぶ)
+親エージェントがユーザーとの対話、承認、差し戻し、再開を担当します。
+工程別の手順は `profile/workflows/base/`、実行可能な次の作業を判定するPythonは
+`profile/workflows/python/` にあります。担当とチェッカーは、割り当てられた作業の
+技能とツールを使い、結果を案件フォルダに保存します。
+従来の単一部品ACP試行も利用できます。 [ACPの設定と試行](docs/cad-workflow.md#acpでpythonから役割エージェントを呼ぶ)
 
 ### ビューアーのライセンス
 
@@ -90,7 +93,7 @@ OCP Viewer CoreはApache-2.0、three-cad-viewerはMITです。それぞれの配
 
 | 層 | 責務 |
 |---|---|
-| ワークフロー・エージェント | 作業順、部品単位の並列実行、作業者とチェッカーの割り当て、人の判断待ちと再開を扱う。初期の実行環境はCodex。 |
+| ワークフロー・エージェント | 案件の進行、担当割り当て、人の判断待ち、成果物からの再開を扱う。初期の実行環境はCodex。 |
 | インターフェース | 単一機能のCLIで処理を呼び出す。CAD閲覧・確認画像と接合・簡略化レビューにはWebビューアーを使う。ファイルと構造化データで結果を受け渡す。 |
 | アプリケーション | 部品抽出、フィット、差分計測、接合検査、内部空間の抽出などのユースケースを実行する。 |
 | ドメイン | 部品の配置、テンプレートのパラメータ、接合条件、判定結果、メッシュの領域・境界の意味を定義する。 |

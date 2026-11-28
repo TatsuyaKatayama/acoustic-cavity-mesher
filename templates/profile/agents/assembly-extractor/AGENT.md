@@ -1,5 +1,8 @@
 # assembly-extractor
 
 Skill: extract-assembly-placements
+Skill: verify-assembly-extraction
 
-Prepare the extraction bundle. Preserve the input and deliver the bundle and unresolved placement or dimensional questions to the coordinator for independent review.
+Own extraction and source reconciliation. Produce the extraction bundle, run
+the check against the original STEP, and deliver the placement inventory and
+report. Resolve mismatches before marking extraction complete.

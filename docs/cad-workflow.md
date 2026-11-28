@@ -1,5 +1,7 @@
 # 音響FEM用の簡略形状テンプレート作成
 
+案件全体の進行・再開は [CAD案件の進行と再開](case-workflow.md) を参照する。以下は工程内で使うツールと、単一部品の試行手順。
+
 このディレクトリには、CADの抽出、簡略化、独立検査、再組み立てと内部空間の検証ツールを置く。
 
 ## 初期の構成
@@ -28,7 +30,7 @@ uv pip install --python .\.venv\Scripts\python.exe -r requirements.txt
 
 ## STEPアセンブリから部品と配置を抽出する
 
-リポジトリのルート で実行する。抽出担当が最初のコマンドを実行し、抽出チェッカーが元のSTEPと出力ディレクトリを受け取って、別のコマンドで照合する。
+リポジトリのルートで実行する。抽出担当が両方のコマンドを実行し、元STEPとの照合レポートと配置一覧を親に返す。
 
 ```powershell
 & .\.venv\Scripts\python.exe .\tools\extract_assembly.py .\machine.step .\b1-output
@@ -236,12 +238,11 @@ uv pip install --python .\.venv\Scripts\python.exe PySide6-Essentials
 
 画面上部の候補一覧に隙間と重なり面積を表示する。候補を選ぶと両面がオレンジ色になり、向かい合って隠れる面は下部の表示切り替えで片側ずつ確認できる。手動で選び直す操作も使える。
 
-### 複数候補をレビューして作成担当へ渡す
+### 接合・簡略化の統合承認を作成担当へ渡す
 
 ```powershell
-& .\.venv\Scripts\python.exe .\tools\review_contacts.py .\b1-output .\b1-output\contacts.json .\b1-output\review.json
-# 接合面の判断後、Web画面の「2 簡略化」で判断を保存・確定する
 & .\.venv\Scripts\python.exe .\tools\review_contacts_web.py .\b1-output .\b1-output\contacts.json .\b1-output\review.json
+# 全配置の統合承認と全体確認後に実行する
 & .\.venv\Scripts\python.exe .\tools\export_template_inputs.py .\b1-output .\b1-output\contacts.json .\b1-output\review.json .\b1-output\b3-input.json
 ```
 
@@ -254,7 +255,9 @@ uv pip install --python .\.venv\Scripts\python.exe PySide6-Essentials
 
 円筒対応は接合候補の抽出・レビュー・受け渡しまで。既存の取付ブロック用の生成・照合・接合検査は平面取付を対象とし、円筒対応テンプレートや検査へ自動的に拡張されるものではない。複数面の接合グループ化、その他の曲面、寸法変更をまたぐ面追跡は後続で扱う。
 
-## 形状作成の単一部品マルチエージェントワークフロー
+## 従来の単一部品試行
+
+この節は互換用のB3試行を説明する。現行の案件フローでは、B3担当が自己確認し、B4担当が独立検査する。
 
 最初の実装は1部品を「進行役 → 作成担当 → チェッカー → 進行役の集約」で処理する。Python CLIはLLMを起動しない。進行役（Codexなど）が役割ごとの別エージェントに生成された指示ファイルを渡して呼び出し、成果物を回収する。将来の並列化はこのワークフローを部品ごとに実行する。役割のIDは別々に指定し、必要なら `--strategy` で戦略担当を割り当てる。
 
@@ -505,7 +508,7 @@ loads `skills/<name>/SKILL.md` from the shared store. assignment files and ACP p
 The independent-check skill belongs to the checker.
 
 To load the independent checker's instructions, run
-`.venv/Scripts/python.exe agent_roles.py b4-checker` from this directory and
+`.venv/Scripts/python.exe tools/agent_roles.py b4-checker` from this directory and
 pass the output with the task and artifact paths. The numerical CLI
 `b4_check_rebuild.py` uses the three measurement methods in order and the 5% criterion by default.
 An explicit --max-error-mm3 retains the legacy direct-only mode. The checker
