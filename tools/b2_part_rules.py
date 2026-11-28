@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 import unicodedata
 
-DEFAULT_STORE = Path(__file__).resolve().parent/'b1-output'/'part-rules'
+DEFAULT_STORE = Path(__file__).resolve().parent.parent/'local'/'part-rules'
 ACTIONS = {'protect', 'preserve', 'approximate', 'omit_candidate', 'ask'}
 
 

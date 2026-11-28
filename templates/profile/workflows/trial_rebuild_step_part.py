@@ -7,6 +7,10 @@ import argparse
 from hashlib import sha256
 import json
 from pathlib import Path
+import sys
+
+# Both templates/profile and local/profile use the same repository-relative layout.
+sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "tools"))
 
 from b3_acp import run_workflow as run_acp, validate_config
 from b3_task import load_task

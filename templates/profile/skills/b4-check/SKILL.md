@@ -1,9 +1,9 @@
 ---
 name: b4-check
-description: Evaluate fit reachability and simplification suitability for a B3 CAD candidate.
+description: Evaluate fit reachability and simplification suitability for a rebuilt CAD candidate.
 ---
 
-Check only. Read the B1 geometry, B2 constraints and the B3 candidate in the same frame.
+Check only. Read the source geometry, approved constraints and the rebuilt candidate in the same frame.
 Preserve the inputs. Save a separate report naming the candidate and evidence.
 
 1. Check geometry validity, retained surfaces, contact references and measured fit.
@@ -28,10 +28,10 @@ Preserve the inputs. Save a separate report naming the candidate and evidence.
 4. Finish with a same-view and relevant section comparison of the unchanged inputs.
    Inspect retained boundaries, functional openings, and intended simplifications.
    Report what is visible and what remains uncertain. Record a separate visual
-   judgment. A pass on the numerical criterion alone does not complete B4.
-   Report the two B4 judgments and stop before B5.
+   judgment. A pass on the numerical criterion alone does not complete validation.
+   Report both judgments and stop before reassembly.
 
-Use the B4 report's feature measurements to compare minimum face area and
+Use the validation report's feature measurements to compare minimum face area and
 minimum nondegenerate edge length before and after simplification. Report
 the face or edge indices and any features below explicitly specified limits.
 Use the measured values as evidence even if no limits were specified.
@@ -41,7 +41,7 @@ rather than relying on a single compound measurement when they disagree.
 Report the 5% numerical judgment and the visual judgment separately. If only
 some sections could be inspected, identify them and report the remaining scope.
 
-Record B4 technical status separately from human review. Mark fit OK when its
+Record technical status separately from human review. Mark fit OK when its
 geometric constraints are met. Report optimization evidence if available.
-Unevaluated optimization is informational. A B4 technical OK leaves human
+Unevaluated optimization is informational. A technical pass leaves human
 review pending and does not authorize registration.

@@ -7,7 +7,7 @@ from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import patch
 
-import b_workflow as workflow
+import trial_rebuild_step_part as workflow
 from b3_build import json_bytes
 
 
